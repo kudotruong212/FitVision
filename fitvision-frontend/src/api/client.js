@@ -1,26 +1,56 @@
 // src/api/client.js
 import axios from "axios";
 
-const API_BASE = "http://localhost:5000";
+// ===============================
+// CẤU HÌNH API
+// ===============================
+export const API_BASE = "http://localhost:5000";
 
+// Tạo instance chung, có timeout + tự bắt lỗi
+const api = axios.create({
+  baseURL: API_BASE,
+  timeout: 10000,
+});
+
+// ===============================
+// CHECK HEALTH
+// ===============================
 export async function checkBackendHealth() {
-  const res = await axios.get(`${API_BASE}/api/health`);
+  const res = await api.get("/api/health");
   return res.data;
 }
 
 export async function checkAIHealth() {
-  const res = await axios.get(`${API_BASE}/api/ai/health`);
+  const res = await api.get("/api/ai/health");
   return res.data;
 }
 
+// ===============================
+// PHÂN TÍCH ẢNH (BODY SCAN) 🧍‍♂️
+// ===============================
 export async function analyzeBody(formData) {
-    const res = await axios.post(
-      `${API_BASE}/api/ai/analyze`,
-      formData,
-      {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      }
-    );
+  try {
+    const res = await api.post("/api/ai/analyze", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+    });
     return res.data;
+  } catch (error) {
+    console.error("❌ analyzeBody error:", error.response?.data || error.message);
+    throw error;
   }
-  
+}
+
+// ===============================
+// TẠO PLAN TẬP LUYỆN (AI / LOGIC BACKEND)
+// ===============================
+export async function generateWorkoutPlan(analysis) {
+  try {
+    const res = await api.post("/api/plan/generate", analysis);
+    return res.data;
+  } catch (error) {
+    console.error("❌ generateWorkoutPlan error:", error.response?.data || error.message);
+    throw error;
+  }
+}
