@@ -1,6 +1,7 @@
 // src/pages/BodyScan.jsx
 import React from "react";
-import { analyzeBody } from "../api/client";
+import { analyzeBody, generateWorkoutPlan } from "../api/client"; 
+// Nếu bạn dùng file api khác, sửa đường dẫn ở đây
 
 function getScoreLevel(score) {
   if (score >= 80) {
@@ -45,10 +46,25 @@ export default function BodyScan() {
     setLoading(true);
     setError(null);
     setResult(null);
+
     try {
       const formData = new FormData();
       formData.append("image", file);
+
+      // gọi AI service phân tích ảnh
       const data = await analyzeBody(formData);
+
+      // gọi backend sinh workout plan (nếu đã làm bước này)
+      try {
+        const plan = await generateWorkoutPlan(data);
+        localStorage.setItem(
+          "fitvision_last_analysis",
+          JSON.stringify({ analysis: data, plan })
+        );
+      } catch (e) {
+        console.warn("Không tạo được workout plan, nhưng body scan vẫn OK.", e);
+      }
+
       setResult(data);
     } catch (err) {
       console.error(err);
@@ -64,7 +80,8 @@ export default function BodyScan() {
       <div>
         <h2 className="text-3xl font-bold mb-2">AI Body Scan</h2>
         <p className="text-gray-300">
-          Tải lên 1 ảnh toàn thân (đứng thẳng) để AI phân tích tư thế & gợi ý bài tập.
+          Tải lên 1 ảnh toàn thân (đứng thẳng) để AI phân tích tư thế & gợi ý
+          bài tập.
         </p>
       </div>
 
@@ -98,11 +115,7 @@ export default function BodyScan() {
             {loading ? "Đang phân tích..." : "Phân tích cơ thể"}
           </button>
 
-          {error && (
-            <div className="mt-2 text-sm text-red-400">
-              {error}
-            </div>
-          )}
+          {error && <div className="mt-2 text-sm text-red-400">{error}</div>}
         </div>
 
         {/* Cột phải: kết quả phân tích */}
