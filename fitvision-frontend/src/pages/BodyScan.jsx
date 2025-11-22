@@ -1,7 +1,8 @@
 // src/pages/BodyScan.jsx
 import React from "react";
-import { analyzeBody, generateWorkoutPlan } from "../api/client"; 
-// Nếu bạn dùng file api khác, sửa đường dẫn ở đây
+import { analyzeBody, generateWorkoutPlan, saveScanSession } from "../api/client";
+
+// =================== Helpers ===================
 
 function getScoreLevel(score) {
   if (score >= 80) {
@@ -21,6 +22,68 @@ function getScoreLevel(score) {
     colorClass: "bg-red-500/20 text-red-300 border-red-500/40",
   };
 }
+
+// Quota scan mỗi ngày (ví dụ 20 lần/ngày)
+function canScanToday(maxScans = 20) {
+  const key = "fitvision_scan_quota";
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+  const raw = localStorage.getItem(key);
+  if (!raw) {
+    localStorage.setItem(
+      key,
+      JSON.stringify({ date: today, count: 0, max: maxScans })
+    );
+    return { allowed: true, left: maxScans };
+  }
+
+  try {
+    const data = JSON.parse(raw);
+    if (data.date !== today) {
+      localStorage.setItem(
+        key,
+        JSON.stringify({ date: today, count: 0, max: maxScans })
+      );
+      return { allowed: true, left: maxScans };
+    }
+
+    const left = data.max - data.count;
+    return { allowed: left > 0, left };
+  } catch (e) {
+    console.error("Lỗi parse quota:", e);
+    return { allowed: true, left: maxScans };
+  }
+}
+
+function increaseScanCount() {
+  const key = "fitvision_scan_quota";
+  const today = new Date().toISOString().slice(0, 10);
+
+  const raw = localStorage.getItem(key);
+  if (!raw) {
+    localStorage.setItem(
+      key,
+      JSON.stringify({ date: today, count: 1, max: 20 })
+    );
+    return;
+  }
+  try {
+    const data = JSON.parse(raw);
+    if (data.date !== today) {
+      localStorage.setItem(
+        key,
+        JSON.stringify({ date: today, count: 1, max: data.max || 20 })
+      );
+    } else {
+      data.count = (data.count || 0) + 1;
+      localStorage.setItem(key, JSON.stringify(data));
+    }
+  } catch (e) {
+    console.error("Lỗi update quota:", e);
+  }
+}
+
+// =================== Component ===================
 
 export default function BodyScan() {
   const [file, setFile] = React.useState(null);
@@ -43,6 +106,16 @@ export default function BodyScan() {
       setError("Vui lòng chọn một ảnh trước.");
       return;
     }
+
+    // Check quota trước khi gọi OpenAI để tiết kiệm chi phí
+    const quota = canScanToday(20); // 20 lượt/ngày
+    if (!quota.allowed) {
+      setError(
+        "Bạn đã sử dụng hết lượt scan hôm nay. Vui lòng thử lại vào ngày mai."
+      );
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setResult(null);
@@ -51,21 +124,48 @@ export default function BodyScan() {
       const formData = new FormData();
       formData.append("image", file);
 
-      // gọi AI service phân tích ảnh
-      const data = await analyzeBody(formData);
+      // 1) Gọi AI Body Scan (OpenAI Vision qua backend AI)
+      const analysis = await analyzeBody(formData);
 
-      // gọi backend sinh workout plan (nếu đã làm bước này)
+      // 2) Gọi backend sinh Workout Plan (nếu có)
+      let plan = null;
       try {
-        const plan = await generateWorkoutPlan(data);
-        localStorage.setItem(
-          "fitvision_last_analysis",
-          JSON.stringify({ analysis: data, plan })
-        );
+        plan = await generateWorkoutPlan(analysis);
       } catch (e) {
-        console.warn("Không tạo được workout plan, nhưng body scan vẫn OK.", e);
+        console.warn("Không tạo được workout plan:", e);
       }
 
-      setResult(data);
+      // 3) Tăng số lượt scan (chỉ tăng khi gọi AI thành công)
+      increaseScanCount();
+
+      // 4) Lưu lần gần nhất
+      localStorage.setItem(
+        "fitvision_last_analysis",
+        JSON.stringify({ analysis, plan })
+      );
+      try {
+        await saveScanSession(analysis, plan);
+      } catch (e) {
+        console.warn("Lưu history lên server thất bại (không nghiêm trọng):", e);
+      }
+
+      // 5) Append vào lịch sử
+      const historyKey = "fitvision_history";
+      const raw = localStorage.getItem(historyKey);
+      const history = raw ? JSON.parse(raw) : [];
+
+      const newEntry = {
+        id: Date.now(),
+        createdAt: new Date().toISOString(),
+        analysis,
+        plan,
+      };
+
+      history.unshift(newEntry);
+      localStorage.setItem(historyKey, JSON.stringify(history));
+
+      // 6) Hiển thị kết quả
+      setResult(analysis);
     } catch (err) {
       console.error(err);
       setError("Có lỗi khi gọi AI phân tích.");
@@ -76,17 +176,17 @@ export default function BodyScan() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Tiêu đề & mô tả */}
+      {/* Header */}
       <div>
         <h2 className="text-3xl font-bold mb-2">AI Body Scan</h2>
         <p className="text-gray-300">
-          Tải lên 1 ảnh toàn thân (đứng thẳng) để AI phân tích tư thế & gợi ý
+          Tải lên 1 ảnh toàn thân (đứng thẳng) để AI phân tích tư thế &amp; gợi ý
           bài tập.
         </p>
       </div>
 
       <div className="grid md:grid-cols-[260px,1fr] gap-6 items-start">
-        {/* Cột trái: upload + preview + button */}
+        {/* Cột trái: upload + preview */}
         <div className="space-y-4">
           <div>
             <input
@@ -118,13 +218,13 @@ export default function BodyScan() {
           {error && <div className="mt-2 text-sm text-red-400">{error}</div>}
         </div>
 
-        {/* Cột phải: kết quả phân tích */}
+        {/* Cột phải: kết quả */}
         <div>
           {result ? (
             <div className="space-y-4">
-              {/* Hàng trên: điểm số + tư thế */}
+              {/* Score + posture */}
               <div className="grid md:grid-cols-3 gap-4">
-                {/* Card điểm số */}
+                {/* Score card */}
                 <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 flex flex-col items-center justify-center">
                   <span className="text-sm text-gray-400 mb-2">
                     Điểm đánh giá
@@ -147,7 +247,7 @@ export default function BodyScan() {
                   })()}
                 </div>
 
-                {/* Card tư thế */}
+                {/* Posture card */}
                 <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 md:col-span-2">
                   <h3 className="text-lg font-semibold mb-2">
                     Tư thế hiện tại
@@ -160,9 +260,31 @@ export default function BodyScan() {
                 </div>
               </div>
 
-              {/* Hàng dưới: cơ yếu + vùng mỡ thừa + gợi ý */}
+              {/* Body shape / risk / notes (nếu có) */}
               <div className="grid md:grid-cols-3 gap-4">
-                {/* Cơ yếu */}
+                <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+                  <h3 className="text-lg font-semibold mb-2">Body shape</h3>
+                  <p className="text-gray-300">
+                    {result.body_shape || "Chưa xác định"}
+                  </p>
+                </div>
+                <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+                  <h3 className="text-lg font-semibold mb-2">Risk level</h3>
+                  <p className="text-gray-300">
+                    {result.risk_level || "N/A"}
+                  </p>
+                </div>
+                <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+                  <h3 className="text-lg font-semibold mb-2">Notes</h3>
+                  <p className="text-gray-300 text-sm">
+                    {result.notes || "Không có ghi chú đặc biệt."}
+                  </p>
+                </div>
+              </div>
+
+              {/* Weak muscles + fat area + recommendations */}
+              <div className="grid md:grid-cols-3 gap-4">
+                {/* Weak muscles */}
                 <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
                   <h3 className="text-lg font-semibold mb-2">Nhóm cơ yếu</h3>
                   {result.weak_muscles && result.weak_muscles.length > 0 ? (
@@ -178,7 +300,7 @@ export default function BodyScan() {
                   )}
                 </div>
 
-                {/* Vùng mỡ thừa */}
+                {/* Fat area */}
                 <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
                   <h3 className="text-lg font-semibold mb-2">
                     Vùng mỡ thừa nổi bật
@@ -195,7 +317,7 @@ export default function BodyScan() {
                   )}
                 </div>
 
-                {/* Gợi ý tập luyện */}
+                {/* Recommendations */}
                 <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
                   <h3 className="text-lg font-semibold mb-2">
                     Gợi ý tập luyện

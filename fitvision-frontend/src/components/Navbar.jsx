@@ -24,6 +24,9 @@ export default function Navbar() {
         <NavLink to="/plan" className={linkClass}>
           Workout Plan
         </NavLink>
+        <NavLink to="/history" className={linkClass}>
+          History
+        </NavLink>
       </div>
     </nav>
   );

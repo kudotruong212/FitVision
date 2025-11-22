@@ -2,32 +2,32 @@
 import React from "react";
 
 export default function WorkoutPlan() {
-  const [data, setData] = React.useState(null);
+  const [plan, setPlan] = React.useState(null);
 
   React.useEffect(() => {
     const raw = localStorage.getItem("fitvision_last_analysis");
-    if (raw) {
-      try {
-        setData(JSON.parse(raw));
-      } catch (e) {
-        console.error("Cannot parse stored plan", e);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed.plan) {
+        setPlan(parsed.plan);
       }
+    } catch (e) {
+      console.error("Không parse được last_analysis:", e);
     }
   }, []);
 
-  if (!data) {
+  if (!plan) {
     return (
       <div className="p-6">
-        <h2 className="text-3xl font-bold mb-2">Workout Plan</h2>
+        <h2 className="text-3xl font-bold mb-2">Workout Plan cá nhân</h2>
         <p className="text-gray-300">
-          Chưa có kế hoạch nào. Hãy vào mục <span className="font-semibold">AI Scan</span>,
-          tải lên ảnh cơ thể và để AI phân tích trước nhé.
+          Chưa có plan. Hãy vào tab <b>AI Scan</b>, phân tích cơ thể, sau đó quay
+          lại đây.
         </p>
       </div>
     );
   }
-
-  const { analysis, plan } = data;
 
   return (
     <div className="p-6 space-y-6">
@@ -38,51 +38,60 @@ export default function WorkoutPlan() {
         </p>
       </div>
 
-      {/* Thông tin tổng quan */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 grid md:grid-cols-3 gap-4">
+      {/* Header info */}
+      <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 grid md:grid-cols-3 gap-4">
         <div>
           <div className="text-sm text-gray-400">Level</div>
-          <div className="text-xl font-semibold capitalize">
-            {plan.level}
+          <div className="text-lg font-semibold text-white">
+            {plan.level || "N/A"}
           </div>
         </div>
         <div>
           <div className="text-sm text-gray-400">Buổi/tuần</div>
-          <div className="text-xl font-semibold">
-            {plan.sessions_per_week}
+          <div className="text-lg font-semibold text-white">
+            {plan.sessions_per_week || "N/A"}
           </div>
         </div>
         <div>
           <div className="text-sm text-gray-400">Focus chính</div>
-          <div className="text-sm text-gray-200">
-            {plan.focus_areas && plan.focus_areas.length > 0
-              ? plan.focus_areas.join(", ")
-              : "Full body"}
+          <div className="text-sm text-emerald-300">
+            {(plan.focus_areas || []).join(", ")}
           </div>
         </div>
       </div>
 
-      {/* Danh sách buổi tập */}
+      {/* Sessions */}
       <div className="space-y-4">
-        {plan.sessions.map((s, idx) => (
+        {(plan.sessions || []).map((session, idx) => (
           <div
             key={idx}
-            className="bg-slate-800 border border-slate-700 rounded-xl p-4"
+            className="bg-slate-800 rounded-xl p-4 border border-slate-700"
           >
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-lg font-semibold">
-                {s.day} – {s.focus}
-              </h3>
-            </div>
-            <ul className="list-disc list-inside text-gray-300 text-sm space-y-1">
-              {s.exercises.map((ex, i) => (
+            <h3 className="text-xl font-semibold mb-1">
+              {session.title || `Buổi ${idx + 1}`}
+            </h3>
+            {session.focus && (
+              <p className="text-sm text-gray-400 mb-2">
+                Focus: {(session.focus || []).join(", ")}
+              </p>
+            )}
+
+            <ul className="list-disc list-inside space-y-1 text-gray-200 text-sm">
+              {(session.exercises || []).map((ex, i) => (
                 <li key={i}>
-                  <span className="font-semibold">{ex.name}</span>
-                  {ex.sets && (
-                    <span className="ml-1">
-                      – {ex.sets}
-                      {ex.reps && ` x ${ex.reps}`}
+                  <span className="font-medium">{ex.name}</span>{" "}
+                  {ex.muscle_group && (
+                    <span className="text-gray-400">
+                      ({ex.muscle_group})
                     </span>
+                  )}
+                  {ex.sets && ex.reps && (
+                    <span className="ml-2 text-emerald-300">
+                      {ex.sets} x {ex.reps}
+                    </span>
+                  )}
+                  {ex.notes && (
+                    <span className="ml-2 text-gray-400">– {ex.notes}</span>
                   )}
                 </li>
               ))}
@@ -91,13 +100,12 @@ export default function WorkoutPlan() {
         ))}
       </div>
 
-      {/* Thêm block nhỏ hiển thị lại tư thế */}
       <details className="mt-4">
         <summary className="text-sm text-gray-400 cursor-pointer">
-          Xem lại kết quả AI Body Scan
+          Xem JSON plan (debug)
         </summary>
         <pre className="mt-2 bg-slate-900 p-3 rounded text-xs overflow-x-auto">
-          {JSON.stringify(analysis, null, 2)}
+          {JSON.stringify(plan, null, 2)}
         </pre>
       </details>
     </div>

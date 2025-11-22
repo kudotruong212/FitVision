@@ -47,10 +47,29 @@ export async function analyzeBody(formData) {
 // ===============================
 export async function generateWorkoutPlan(analysis) {
   try {
-    const res = await api.post("/api/plan/generate", analysis);
+    const res = await api.post("/api/plan/generate", analysis, {
+      timeout: 30000, // ⬅ 30 giây cho plan vì OpenAI có thể lâu
+    });
     return res.data;
   } catch (error) {
-    console.error("❌ generateWorkoutPlan error:", error.response?.data || error.message);
+    console.error(
+      "❌ generateWorkoutPlan error:",
+      error.response?.data || error.message
+    );
     throw error;
   }
+}
+
+// Lưu history lên backend (MongoDB)
+export async function saveScanSession(analysis, plan) {
+  const res = await api.post("/api/scan/save", { analysis, plan });
+  return res.data;
+}
+
+// Lấy history từ backend
+export async function fetchScanHistory(limit = 20) {
+  const res = await api.get("/api/scan/history", {
+    params: { limit },
+  });
+  return res.data;
 }
