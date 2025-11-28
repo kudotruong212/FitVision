@@ -83,6 +83,33 @@ function increaseScanCount() {
   }
 }
 
+function validateImageQuality(file) {
+  const sizeKB = Math.round(file.size / 1024);
+  if (sizeKB < 80) {
+    return { ok: false, message: "Ảnh quá nhỏ (<80KB). Hãy chụp ảnh rõ hơn." };
+  }
+  if (sizeKB > 8 * 1024) {
+    return { ok: false, message: "Ảnh quá lớn (>8MB). Hãy nén hoặc chụp lại." };
+  }
+  return { ok: true, message: `Kích thước ảnh: ${sizeKB}KB` };
+}
+
+function getImageDimensions(file) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.width, height: img.height });
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+      resolve(null);
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  });
+}
+
 // =================== Component ===================
 
 export default function BodyScan() {
@@ -91,6 +118,10 @@ export default function BodyScan() {
   const [result, setResult] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState(null);
+  const [quotaInfo, setQuotaInfo] = React.useState(() => canScanToday(20));
+  const [showGuide, setShowGuide] = React.useState(false);
+  const [qualityNote, setQualityNote] = React.useState(null);
+  const [imageMeta, setImageMeta] = React.useState(null);
 
   const handleFileChange = (e) => {
     const f = e.target.files[0];
@@ -99,11 +130,29 @@ export default function BodyScan() {
     setPreview(URL.createObjectURL(f));
     setResult(null);
     setError(null);
+
+    const quality = validateImageQuality(f);
+    setQualityNote(quality);
+    getImageDimensions(f).then((meta) => {
+      if (!meta) return;
+      setImageMeta(meta);
+      if (meta.height < 600 || meta.width < 400) {
+        setQualityNote({
+          ok: false,
+          message: "Ảnh nên >= 400x600px để AI nhận diện pose rõ ràng.",
+        });
+      }
+    });
   };
 
   const handleAnalyze = async () => {
     if (!file) {
       setError("Vui lòng chọn một ảnh trước.");
+      return;
+    }
+
+    if (qualityNote && !qualityNote.ok) {
+      setError("Ảnh chưa đạt yêu cầu. Vui lòng chụp lại theo hướng dẫn.");
       return;
     }
 
@@ -115,6 +164,7 @@ export default function BodyScan() {
       );
       return;
     }
+    setQuotaInfo(quota);
 
     setLoading(true);
     setError(null);
@@ -166,6 +216,7 @@ export default function BodyScan() {
 
       // 6) Hiển thị kết quả
       setResult(analysis);
+      setQuotaInfo(canScanToday(20));
     } catch (err) {
       console.error(err);
       setError("Có lỗi khi gọi AI phân tích.");
@@ -178,44 +229,78 @@ export default function BodyScan() {
     <div className="p-6 space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-3xl font-bold mb-2">AI Body Scan</h2>
-        <p className="text-gray-300">
-          Tải lên 1 ảnh toàn thân (đứng thẳng) để AI phân tích tư thế &amp; gợi ý
-          bài tập.
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-3xl font-bold">AI Body Scan</h2>
+          <span className="text-xs px-3 py-1 rounded-full border border-emerald-500/50 text-emerald-300">
+            {quotaInfo.allowed
+              ? `Còn ${quotaInfo.left} lượt hôm nay`
+              : "Đã hết lượt hôm nay"}
+          </span>
+        </div>
+        <p className="text-gray-300 mt-1">
+          Tải ảnh toàn thân đủ sáng, đứng thẳng. AI phân tích posture, nhóm cơ yếu và sinh workout plan.
         </p>
+        <button
+          onClick={() => setShowGuide(true)}
+          className="mt-3 text-sm text-emerald-300 hover:text-emerald-200 underline"
+        >
+          Xem hướng dẫn chụp ảnh chuẩn →
+        </button>
       </div>
 
-      <div className="grid md:grid-cols-[260px,1fr] gap-6 items-start">
+      <div className="grid lg:grid-cols-[320px,1fr] gap-6 items-start">
         {/* Cột trái: upload + preview */}
-        <div className="space-y-4">
-          <div>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleFileChange}
-              className="mt-2 text-sm text-gray-300"
-            />
-          </div>
+        <div className="space-y-4 bg-slate-900/50 border border-slate-800 rounded-2xl p-4">
+          <label className="block text-sm font-semibold text-gray-200">
+            1. Chọn ảnh toàn thân
+          </label>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleFileChange}
+            className="mt-1 text-sm text-gray-300"
+          />
 
           {preview && (
             <div className="mt-2">
               <img
                 src={preview}
                 alt="preview"
-                className="w-60 h-60 object-cover rounded-xl border border-slate-700"
+                className="w-full h-72 object-cover rounded-xl border border-slate-700"
               />
+              {imageMeta && (
+                <p className="text-xs text-gray-400 mt-1">
+                  Kích thước ảnh: {imageMeta.width}x{imageMeta.height}px
+                </p>
+              )}
+            </div>
+          )}
+
+          {qualityNote && (
+            <div
+              className={`text-xs px-3 py-2 rounded-lg border ${
+                qualityNote.ok
+                  ? "text-emerald-300 border-emerald-500/40 bg-emerald-500/10"
+                  : "text-amber-300 border-amber-500/40 bg-amber-500/10"
+              }`}
+            >
+              {qualityNote.message}
             </div>
           )}
 
           <button
             onClick={handleAnalyze}
             disabled={loading}
-            className="mt-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 rounded text-white font-semibold w-full"
+            className="mt-2 px-4 py-3 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 rounded-xl text-slate-900 font-semibold w-full"
           >
             {loading ? "Đang phân tích..." : "Phân tích cơ thể"}
           </button>
 
           {error && <div className="mt-2 text-sm text-red-400">{error}</div>}
+
+          <div className="text-xs text-gray-400 border-t border-slate-800 pt-3">
+            Mẹo: hãy mặc đồ ôm, không che khớp, đứng cách camera 2m và giữ nền gọn gàng.
+          </div>
         </div>
 
         {/* Cột phải: kết quả */}
@@ -347,13 +432,81 @@ export default function BodyScan() {
                 </pre>
               </details>
             </div>
+          ) : loading ? (
+            <AnalysisSkeleton />
           ) : (
             <p className="text-gray-500 text-sm">
-              Kết quả phân tích sẽ hiển thị ở đây sau khi bạn tải ảnh và bấm
-              <span className="font-semibold"> "Phân tích cơ thể"</span>.
+              Kết quả sẽ hiển thị tại đây sau khi bạn tải ảnh và bấm{" "}
+              <span className="font-semibold">“Phân tích cơ thể”.</span>
             </p>
           )}
         </div>
+      </div>
+
+      {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
+    </div>
+  );
+}
+
+function AnalysisSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="grid md:grid-cols-3 gap-4">
+        {[...Array(3)].map((_, idx) => (
+          <div
+            key={idx}
+            className="bg-slate-800 rounded-xl p-4 border border-slate-700 animate-pulse h-32"
+          />
+        ))}
+      </div>
+      <div className="grid md:grid-cols-3 gap-4">
+        {[...Array(3)].map((_, idx) => (
+          <div
+            key={idx}
+            className="bg-slate-800 rounded-xl p-4 border border-slate-700 animate-pulse h-40"
+          />
+        ))}
+      </div>
+      <div className="grid md:grid-cols-3 gap-4">
+        {[...Array(3)].map((_, idx) => (
+          <div
+            key={idx}
+            className="bg-slate-800 rounded-xl p-4 border border-slate-700 animate-pulse h-40"
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GuideModal({ onClose }) {
+  const tips = [
+    "Đứng cách camera 2–3 mét, bật đủ sáng và hướng thẳng.",
+    "Giữ khung hình bao trọn đầu tới chân, tránh bị cắt tay.",
+    "Mặc đồ ôm hoặc thể thao để AI thấy rõ đường cơ thể.",
+    "Dùng chân máy hoặc đặt điện thoại cố định để không bị rung.",
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-slate-950/70 flex items-center justify-center z-50 px-4">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-semibold">Hướng dẫn chụp ảnh chuẩn</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white">
+            ✕
+          </button>
+        </div>
+        <ul className="space-y-2 text-sm text-gray-300 list-disc list-inside">
+          {tips.map((tip) => (
+            <li key={tip}>{tip}</li>
+          ))}
+        </ul>
+        <button
+          onClick={onClose}
+          className="w-full py-2 rounded-xl bg-emerald-500 text-slate-900 font-semibold"
+        >
+          Đã hiểu
+        </button>
       </div>
     </div>
   );

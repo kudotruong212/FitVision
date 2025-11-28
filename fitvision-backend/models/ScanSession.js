@@ -3,7 +3,13 @@ import mongoose from "mongoose";
 
 const ScanSessionSchema = new mongoose.Schema(
   {
-    // sau này có userId thì thêm vào
+     // 🔹 user sở hữu lần scan này
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false, // sau này có thể nâng lên true
+    },
+    
     filename: String,
     size_kb: Number,
 
@@ -15,6 +21,17 @@ const ScanSessionSchema = new mongoose.Schema(
     body_shape: String,
     risk_level: String,
     notes: String,
+
+    // Ảnh Cloudinary
+    image_url: {
+      type: String,
+      required: false,
+    },
+    
+    image_public_id: {
+      type: String,
+      required: false,
+    },
 
     // lưu luôn toàn bộ plan (object) cho dễ
     plan: {

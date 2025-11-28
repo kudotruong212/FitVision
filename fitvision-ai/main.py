@@ -131,6 +131,13 @@ class BodyAnalysis(BaseModel):
     risk_level: Optional[str] = None
     notes: Optional[str] = None
 
+class ChatMessage(BaseModel):
+    role: str  # "user" | "assistant" | "system"
+    content: str
+
+class CoachChatRequest(BaseModel):
+    messages: List[ChatMessage]
+    analysis: Optional[BodyAnalysis] = None  # dùng lại BodyAnalysis có sẵn
 
 # ================= WORKOUT PLAN GENERATOR =================
 @app.post("/ai/plan/generate")
@@ -213,3 +220,100 @@ async def generate_workout_plan(analysis: BodyAnalysis):
             "error": "AI_plan_failed",
             "message": str(e),
         }
+
+@app.post("/ai/chat")
+async def ai_coach_chat(payload: CoachChatRequest):
+    """
+    Chat với AI Coach, có thể dùng kèm body analysis để cá nhân hóa trả lời.
+    """
+    try:
+        # 1) Chuẩn bị context phân tích cơ thể (nếu có)
+        context_text = ""
+        if payload.analysis:
+            analysis_dict = payload.analysis.model_dump()
+            context_text = (
+                "Dưới đây là phân tích cơ thể gần nhất của khách hàng:\n"
+                f"{json.dumps(analysis_dict, ensure_ascii=False, indent=2)}\n\n"
+            )
+
+        # 2) Hệ thống prompt
+        system_prompt = (
+            "You are a Vietnamese fitness coach and physical therapist. "
+            "You answer in Vietnamese, with friendly and clear tone. "
+            "You must give specific, actionable workout/rehab suggestions. "
+            "If the user asks unsafe things, explain the risk."
+        )
+
+        # 3) Ghép messages cho OpenAI
+        messages = [
+            {"role": "system", "content": system_prompt},
+        ]
+
+        if context_text:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": context_text,
+                }
+            )
+
+        # Thêm lịch sử chat từ FE
+        for m in payload.messages:
+            messages.append({"role": m.role, "content": m.content})
+
+        # 4) Gọi GPT-4o-mini (text only)
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+        )
+
+        answer = resp.choices[0].message.content.strip()
+
+        return {
+            "answer": answer,
+        }
+
+    except Exception as e:
+        print("AI coach chat error:", repr(e))
+        return {
+            "error": "AI_coach_failed",
+            "message": str(e),
+        }
+
+
+@app.post("/ai/coach")
+def coach_chat(payload: dict):
+    user_msg = payload.get("user_message", "")
+    ctx = payload.get("context", {})
+
+    scan = ctx.get("latest_scan") or {}
+    plan = ctx.get("plan") or {}
+
+    system_prompt = f"""
+    You are FitVision AI Coach, a friendly but expert fitness trainer.
+    Always base your responses on the user's latest body scan data and workout plan.
+
+    Body Scan:
+    Posture: {scan.get('posture')}
+    Weak muscles: {scan.get('weak_muscles')}
+    Fat area: {scan.get('fat_area')}
+    Score: {scan.get('score')}
+    Risk level: {scan.get('risk_level')}
+    Notes: {scan.get('notes')}
+
+    Workout Plan:
+    Level: {plan.get('level')}
+    Focus: {plan.get('focus_areas')}
+    Sessions: {plan.get('sessions')}
+    """
+
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_msg},
+        ],
+    )
+
+    reply = resp.choices[0].message.content
+    return {"reply": reply}
