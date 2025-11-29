@@ -1,6 +1,13 @@
 // src/pages/BodyScan.jsx
 import React from "react";
-import { analyzeBody, generateWorkoutPlan, saveScanSession } from "../api/client";
+import { Link } from "react-router-dom";
+import {
+  analyzeBody,
+  generateWorkoutPlan,
+  saveScanSession,
+  fetchScanQuota,
+} from "../api/client";
+import { useAuth } from "../context/AuthContext.jsx";
 
 // =================== Helpers ===================
 
@@ -21,66 +28,6 @@ function getScoreLevel(score) {
     label: "Cần cải thiện nhiều",
     colorClass: "bg-red-500/20 text-red-300 border-red-500/40",
   };
-}
-
-// Quota scan mỗi ngày (ví dụ 20 lần/ngày)
-function canScanToday(maxScans = 20) {
-  const key = "fitvision_scan_quota";
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-
-  const raw = localStorage.getItem(key);
-  if (!raw) {
-    localStorage.setItem(
-      key,
-      JSON.stringify({ date: today, count: 0, max: maxScans })
-    );
-    return { allowed: true, left: maxScans };
-  }
-
-  try {
-    const data = JSON.parse(raw);
-    if (data.date !== today) {
-      localStorage.setItem(
-        key,
-        JSON.stringify({ date: today, count: 0, max: maxScans })
-      );
-      return { allowed: true, left: maxScans };
-    }
-
-    const left = data.max - data.count;
-    return { allowed: left > 0, left };
-  } catch (e) {
-    console.error("Lỗi parse quota:", e);
-    return { allowed: true, left: maxScans };
-  }
-}
-
-function increaseScanCount() {
-  const key = "fitvision_scan_quota";
-  const today = new Date().toISOString().slice(0, 10);
-
-  const raw = localStorage.getItem(key);
-  if (!raw) {
-    localStorage.setItem(
-      key,
-      JSON.stringify({ date: today, count: 1, max: 20 })
-    );
-    return;
-  }
-  try {
-    const data = JSON.parse(raw);
-    if (data.date !== today) {
-      localStorage.setItem(
-        key,
-        JSON.stringify({ date: today, count: 1, max: data.max || 20 })
-      );
-    } else {
-      data.count = (data.count || 0) + 1;
-      localStorage.setItem(key, JSON.stringify(data));
-    }
-  } catch (e) {
-    console.error("Lỗi update quota:", e);
-  }
 }
 
 function validateImageQuality(file) {
@@ -113,15 +60,44 @@ function getImageDimensions(file) {
 // =================== Component ===================
 
 export default function BodyScan() {
+  const { profile, profileLoading } = useAuth();
   const [file, setFile] = React.useState(null);
   const [preview, setPreview] = React.useState(null);
   const [result, setResult] = React.useState(null);
+  const [latestPlan, setLatestPlan] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState(null);
-  const [quotaInfo, setQuotaInfo] = React.useState(() => canScanToday(20));
+  const [quotaInfo, setQuotaInfo] = React.useState({
+    allowed: true,
+    left: null,
+    max: null,
+    loading: true,
+  });
   const [showGuide, setShowGuide] = React.useState(false);
   const [qualityNote, setQualityNote] = React.useState(null);
   const [imageMeta, setImageMeta] = React.useState(null);
+  const [quotaMessage, setQuotaMessage] = React.useState(null);
+  const [planStatus, setPlanStatus] = React.useState("idle"); // idle | loading | success | error
+  const [planError, setPlanError] = React.useState(null);
+  const profileReady = Boolean(profile && profile.goal);
+  const profileSnapshot = profileReady ? profile : null;
+
+  React.useEffect(() => {
+    refreshQuota();
+  }, []);
+
+  async function refreshQuota() {
+    try {
+      setQuotaMessage(null);
+      setQuotaInfo((prev) => ({ ...prev, loading: true }));
+      const data = await fetchScanQuota();
+      setQuotaInfo({ ...data, loading: false });
+    } catch (err) {
+      console.error(err);
+      setQuotaMessage("Không tải được quota từ server.");
+      setQuotaInfo((prev) => ({ ...prev, loading: false }));
+    }
+  }
 
   const handleFileChange = (e) => {
     const f = e.target.files[0];
@@ -129,7 +105,10 @@ export default function BodyScan() {
     setFile(f);
     setPreview(URL.createObjectURL(f));
     setResult(null);
+    setLatestPlan(null);
     setError(null);
+    setPlanStatus("idle");
+    setPlanError(null);
 
     const quality = validateImageQuality(f);
     setQualityNote(quality);
@@ -156,39 +135,46 @@ export default function BodyScan() {
       return;
     }
 
-    // Check quota trước khi gọi OpenAI để tiết kiệm chi phí
-    const quota = canScanToday(20); // 20 lượt/ngày
-    if (!quota.allowed) {
-      setError(
-        "Bạn đã sử dụng hết lượt scan hôm nay. Vui lòng thử lại vào ngày mai."
-      );
+    if (quotaInfo.loading) {
+      setError("Đang kiểm tra quota. Vui lòng đợi vài giây.");
       return;
     }
-    setQuotaInfo(quota);
+    if (!quotaInfo.allowed) {
+      setError("Bạn đã sử dụng hết lượt scan hôm nay.");
+      return;
+    }
 
     setLoading(true);
     setError(null);
     setResult(null);
+    setLatestPlan(null);
+    setPlanStatus("loading");
+    setPlanError(null);
 
     try {
       const formData = new FormData();
       formData.append("image", file);
 
       // 1) Gọi AI Body Scan (OpenAI Vision qua backend AI)
-      const analysis = await analyzeBody(formData);
+      const analysisResponse = await analyzeBody(formData);
+      const { quota: serverQuota, ...analysis } = analysisResponse || {};
+      if (serverQuota) {
+        setQuotaInfo({ ...serverQuota, loading: false });
+      }
 
       // 2) Gọi backend sinh Workout Plan (nếu có)
       let plan = null;
       try {
-        plan = await generateWorkoutPlan(analysis);
+        plan = await generateWorkoutPlan(analysis, profileSnapshot);
+        setPlanStatus("success");
+        setLatestPlan(plan);
       } catch (e) {
         console.warn("Không tạo được workout plan:", e);
+        setPlanStatus("error");
+        setPlanError("Không tạo được kế hoạch tập luyện tự động. Hãy thử lại sau.");
       }
 
-      // 3) Tăng số lượt scan (chỉ tăng khi gọi AI thành công)
-      increaseScanCount();
-
-      // 4) Lưu lần gần nhất
+      // 3) Lưu lần gần nhất
       localStorage.setItem(
         "fitvision_last_analysis",
         JSON.stringify({ analysis, plan })
@@ -214,12 +200,21 @@ export default function BodyScan() {
       history.unshift(newEntry);
       localStorage.setItem(historyKey, JSON.stringify(history));
 
-      // 6) Hiển thị kết quả
+      // 4) Hiển thị kết quả
       setResult(analysis);
-      setQuotaInfo(canScanToday(20));
     } catch (err) {
       console.error(err);
-      setError("Có lỗi khi gọi AI phân tích.");
+      if (err.response?.status === 429) {
+        const quota = err.response?.data?.quota;
+        if (quota) {
+          setQuotaInfo({ ...quota, loading: false });
+        }
+        setError(err.response?.data?.error || "Bạn đã hết lượt scan hôm nay.");
+      } else {
+        setError("Có lỗi khi gọi AI phân tích.");
+      }
+      setPlanStatus("idle");
+      setPlanError(null);
     } finally {
       setLoading(false);
     }
@@ -232,10 +227,20 @@ export default function BodyScan() {
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-3xl font-bold">AI Body Scan</h2>
           <span className="text-xs px-3 py-1 rounded-full border border-emerald-500/50 text-emerald-300">
-            {quotaInfo.allowed
-              ? `Còn ${quotaInfo.left} lượt hôm nay`
+            {quotaInfo.loading
+              ? "Đang kiểm tra quota..."
+              : quotaInfo.allowed
+              ? `Còn ${quotaInfo.left}/${quotaInfo.max} lượt hôm nay`
               : "Đã hết lượt hôm nay"}
           </span>
+          <button
+            onClick={refreshQuota}
+            className="text-xs text-gray-400 hover:text-white underline"
+            type="button"
+            disabled={quotaInfo.loading}
+          >
+            Làm mới
+          </button>
         </div>
         <p className="text-gray-300 mt-1">
           Tải ảnh toàn thân đủ sáng, đứng thẳng. AI phân tích posture, nhóm cơ yếu và sinh workout plan.
@@ -246,6 +251,21 @@ export default function BodyScan() {
         >
           Xem hướng dẫn chụp ảnh chuẩn →
         </button>
+        {profileLoading && (
+          <div className="mt-4 text-xs text-gray-300 bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-2">
+            Đang tải hồ sơ mục tiêu...
+          </div>
+        )}
+        {!profileLoading && !profileReady && (
+          <div className="mt-4 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/40 rounded-xl px-4 py-3">
+            ⚠ Bạn chưa cập nhật mục tiêu luyện tập. AI sẽ chính xác hơn nếu bạn
+            bổ sung{" "}
+            <Link to="/profile" className="underline font-semibold">
+              hồ sơ mục tiêu
+            </Link>{" "}
+            trước khi scan.
+          </div>
+        )}
       </div>
 
       <div className="grid lg:grid-cols-[320px,1fr] gap-6 items-start">
@@ -290,25 +310,53 @@ export default function BodyScan() {
 
           <button
             onClick={handleAnalyze}
-            disabled={loading}
+            disabled={loading || quotaInfo.loading || !quotaInfo.allowed}
             className="mt-2 px-4 py-3 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 rounded-xl text-slate-900 font-semibold w-full"
           >
             {loading ? "Đang phân tích..." : "Phân tích cơ thể"}
           </button>
 
           {error && <div className="mt-2 text-sm text-red-400">{error}</div>}
+          {quotaMessage && (
+            <div className="mt-1 text-xs text-amber-300">{quotaMessage}</div>
+          )}
 
           <div className="text-xs text-gray-400 border-t border-slate-800 pt-3">
             Mẹo: hãy mặc đồ ôm, không che khớp, đứng cách camera 2m và giữ nền gọn gàng.
           </div>
+
+          {planStatus === "loading" && (
+            <div className="mt-3 text-xs px-3 py-2 rounded-lg border border-emerald-500/50 text-emerald-200 bg-emerald-500/10">
+              Đang tạo kế hoạch tập luyện cá nhân…
+            </div>
+          )}
+          {planStatus === "error" && planError && (
+            <div className="mt-3 text-xs px-3 py-2 rounded-lg border border-amber-500/50 text-amber-200 bg-amber-500/10">
+              {planError}
+            </div>
+          )}
+          {planStatus === "success" && latestPlan && (
+            <div className="mt-3 text-xs px-3 py-2 rounded-lg border border-emerald-500/50 text-emerald-200 bg-emerald-500/10">
+              ✅ Plan mới đã sẵn sàng ({latestPlan.level}) – mở tab{" "}
+              <Link to="/plan" className="underline font-semibold">
+                Workout Plan
+              </Link>{" "}
+              để xem chi tiết.
+            </div>
+          )}
         </div>
 
         {/* Cột phải: kết quả */}
         <div>
           {result ? (
             <div className="space-y-4">
+              {result.pose_warning && (
+                <div className="bg-amber-500/10 border border-amber-500/40 text-amber-200 text-sm px-4 py-3 rounded-xl">
+                  ⚠ {result.pose_warning}
+                </div>
+              )}
               {/* Score + posture */}
-              <div className="grid md:grid-cols-3 gap-4">
+              <div className="grid md:grid-cols-4 gap-4">
                 {/* Score card */}
                 <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 flex flex-col items-center justify-center">
                   <span className="text-sm text-gray-400 mb-2">
@@ -331,6 +379,12 @@ export default function BodyScan() {
                     );
                   })()}
                 </div>
+
+                {/* Pose confidence */}
+                <PoseConfidenceCard
+                  confidence={result.pose_confidence}
+                  points={result.pose_points}
+                />
 
                 {/* Posture card */}
                 <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 md:col-span-2">
@@ -508,6 +562,49 @@ function GuideModal({ onClose }) {
           Đã hiểu
         </button>
       </div>
+    </div>
+  );
+}
+
+function PoseConfidenceCard({ confidence, points = [] }) {
+  if (confidence == null) {
+    return (
+      <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 flex flex-col justify-center">
+        <span className="text-sm text-gray-400 mb-1">Độ tin cậy pose</span>
+        <p className="text-sm text-gray-500">
+          Chưa có dữ liệu pose. Hãy thử lại với ảnh rõ hơn.
+        </p>
+      </div>
+    );
+  }
+
+  const percentage = Math.round(confidence * 100);
+  const strong = percentage >= 70;
+  const medium = percentage >= 50 && percentage < 70;
+  const levelClass = strong
+    ? "text-emerald-300"
+    : medium
+    ? "text-amber-300"
+    : "text-red-300";
+
+  const highlight = (points || []).slice(0, 4);
+
+  return (
+    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+      <span className="text-sm text-gray-400">Độ tin cậy pose</span>
+      <div className={`text-3xl font-extrabold ${levelClass}`}>{percentage}%</div>
+      <p className="text-[11px] text-gray-500">
+        Trung bình visibility của {points?.length || 0} landmarks.
+      </p>
+      {highlight.length > 0 && (
+        <div className="mt-2 text-[10px] text-gray-400 space-y-1">
+          {highlight.map((pt, idx) => (
+            <div key={idx}>
+              #{idx + 1}: ({pt.x}, {pt.y}) · vis {pt.visibility}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -21,6 +21,16 @@ const ScanSessionSchema = new mongoose.Schema(
     body_shape: String,
     risk_level: String,
     notes: String,
+    pose_confidence: Number,
+    pose_points: [
+      {
+        x: Number,
+        y: Number,
+        z: Number,
+        visibility: Number,
+      },
+    ],
+    pose_warning: String,
 
     // Ảnh Cloudinary
     image_url: {
@@ -37,6 +47,24 @@ const ScanSessionSchema = new mongoose.Schema(
     plan: {
       type: Object,
       default: null,
+    },
+    derived_metrics: {
+      score_delta: {
+        type: Number,
+        default: null,
+      },
+      weak_focus: {
+        type: [String],
+        default: [],
+      },
+      pose_symmetry: {
+        type: Number,
+        default: null,
+      },
+      fat_area_confidence: {
+        type: Number,
+        default: null,
+      },
     },
   },
   {

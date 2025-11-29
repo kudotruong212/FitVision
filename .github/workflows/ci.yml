@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        working-directory: fitvision-frontend
+        run: npm ci
+      - name: Lint
+        working-directory: fitvision-frontend
+        run: npm run lint
+      - name: Test
+        working-directory: fitvision-frontend
+        run: npm run test
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        working-directory: fitvision-backend
+        run: npm ci
+      - name: Test
+        working-directory: fitvision-backend
+        env:
+          OPENAI_API_KEY: test
+        run: npm test
+
+
+
+
