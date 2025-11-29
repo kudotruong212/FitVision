@@ -1,6 +1,6 @@
 // src/pages/Exercises.jsx
 import React from "react";
-import { fetchExercises } from "../api/client";
+import { fetchExercises } from "../api/services/exerciseService.js";
 import { Link } from "react-router-dom";
 
 

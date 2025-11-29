@@ -1,5 +1,6 @@
 import React from "react";
-import { updateProfile, resendVerificationEmail } from "../api/client";
+import { updateProfile } from "../api/services/profileService.js";
+import { resendVerificationEmail } from "../api/services/authService.js";
 import { useAuth } from "../context/AuthContext.jsx";
 
 const experienceOptions = [

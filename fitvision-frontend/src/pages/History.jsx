@@ -4,7 +4,7 @@ import {
   fetchScanHistory,
   fetchSignedScanImage,
   deleteScanSession,
-} from "../api/client";
+} from "../api/services/scanService.js";
 
 const RISK_FILTERS = ["all", "low", "medium", "high"];
 const SORTING = [

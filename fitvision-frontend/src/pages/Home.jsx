@@ -1,7 +1,8 @@
 // src/pages/Home.jsx
 import React from "react";
 import { Link } from "react-router-dom";
-import { fetchScanStats } from "../api/client";
+import { fetchScanStats } from "../api/services/statsService.js";
+import { useAuth } from "../context/AuthContext.jsx";
 
 const onboarding = [
   {
@@ -37,12 +38,18 @@ const testimonials = [
 ];
 
 export default function Home() {
+  const { user, isAuthenticated } = useAuth();
   const [stats, setStats] = React.useState(null);
   const [loadingStats, setLoadingStats] = React.useState(true);
 
   React.useEffect(() => {
-    loadStats();
-  }, []);
+    // Chỉ load stats nếu user đã đăng nhập
+    if (isAuthenticated && user) {
+      loadStats();
+    } else {
+      setLoadingStats(false);
+    }
+  }, [isAuthenticated, user]);
 
   async function loadStats() {
     try {
@@ -50,7 +57,10 @@ export default function Home() {
       const data = await fetchScanStats();
       setStats(data);
     } catch (e) {
-      console.error("Không tải được stats trên Home:", e);
+      // Không log error nếu là 401 (user chưa đăng nhập)
+      if (e.response?.status !== 401) {
+        console.error("Không tải được stats trên Home:", e);
+      }
     } finally {
       setLoadingStats(false);
     }

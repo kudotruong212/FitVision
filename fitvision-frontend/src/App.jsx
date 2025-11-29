@@ -2,6 +2,8 @@
 import { Routes, Route } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import RequireAuth from "./components/RequireAuth.jsx";
+import ErrorBoundary from "./components/ErrorBoundary";
+import ToastProvider from "./components/ToastProvider";
 import Home from "./pages/Home";
 import BodyScan from "./pages/BodyScan";
 import WorkoutPlan from "./pages/WorkoutPlan";
@@ -14,19 +16,22 @@ import ExerciseDetail from "./pages/ExerciseDetail";
 import Dashboard from "./pages/Dashboard";
 import Profile from "./pages/Profile";
 import Onboarding from "./pages/Onboarding";
+import { ROUTES } from "./constants/routes.js";
 
 
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-slate-900 text-white">
-      <Navbar />
-      <div className="max-w-5xl mx-auto pt-6">
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/auth" element={<Auth />} />
+    <ErrorBoundary>
+      <div className="min-h-screen bg-slate-900 text-white">
+        <ToastProvider />
+        <Navbar />
+        <div className="max-w-5xl mx-auto pt-6">
+          <Routes>
+          <Route path={ROUTES.HOME} element={<Home />} />
+          <Route path={ROUTES.AUTH} element={<Auth />} />
           <Route
-            path="/dashboard"
+            path={ROUTES.DASHBOARD}
             element={
               <RequireAuth>
                 <Dashboard />
@@ -34,17 +39,17 @@ export default function App() {
             }
           />
           <Route
-            path="/scan"
+            path={ROUTES.SCAN}
             element={
               <RequireAuth>
                 <BodyScan />
               </RequireAuth>
             }
           />
-          <Route path="/exercises" element={<Exercises />} />
-          <Route path="/exercises/:slug" element={<ExerciseDetail />} />
+          <Route path={ROUTES.EXERCISES} element={<Exercises />} />
+          <Route path={ROUTES.EXERCISE_DETAIL} element={<ExerciseDetail />} />
           <Route
-            path="/plan"
+            path={ROUTES.PLAN}
             element={
               <RequireAuth>
                 <WorkoutPlan />
@@ -52,7 +57,7 @@ export default function App() {
             }
           />
           <Route
-            path="/history"
+            path={ROUTES.HISTORY}
             element={
               <RequireAuth>
                 <History />
@@ -60,7 +65,7 @@ export default function App() {
             }
           />
           <Route
-            path="/coach"
+            path={ROUTES.COACH}
             element={
               <RequireAuth>
                 <CoachChat />
@@ -68,7 +73,7 @@ export default function App() {
             }
           />
           <Route
-            path="/profile"
+            path={ROUTES.PROFILE}
             element={
               <RequireAuth>
                 <Profile />
@@ -76,16 +81,17 @@ export default function App() {
             }
           />
           <Route
-            path="/onboarding"
+            path={ROUTES.ONBOARDING}
             element={
               <RequireAuth>
                 <Onboarding />
               </RequireAuth>
             }
           />
-          <Route path="/3d-lab" element={<ThreeLab />} />
-        </Routes>
+          <Route path={ROUTES.THREE_LAB} element={<ThreeLab />} />
+          </Routes>
+        </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 }

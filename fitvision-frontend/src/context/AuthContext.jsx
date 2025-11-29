@@ -1,6 +1,10 @@
 // src/context/AuthContext.jsx
 import React from "react";
-import { logoutUser, fetchProfile, verifyToken, setOnAuthError } from "../api/client";
+import { verifyToken } from "../api/services/authService.js";
+import { fetchProfile } from "../api/services/profileService.js";
+import { logoutUser, setOnAuthError } from "../api/client.js";
+import { getStorageItem, getStorageJSON, setStorageItem } from "../api/utils/storage.js";
+import { STORAGE_KEYS } from "../constants/storageKeys.js";
 
 const AuthContext = React.createContext(null);
 
@@ -25,8 +29,8 @@ export function AuthProvider({ children }) {
     async function validateAuth() {
       setAuthLoading(true);
       try {
-        const raw = localStorage.getItem("fitvision_user");
-        const token = localStorage.getItem("fitvision_token");
+        const raw = getStorageJSON(STORAGE_KEYS.USER);
+        const token = getStorageItem(STORAGE_KEYS.TOKEN);
         
         if (!token || !raw) {
           setAuthLoading(false);
@@ -38,7 +42,7 @@ export function AuthProvider({ children }) {
         
         if (result.valid) {
           try {
-            const parsed = JSON.parse(raw);
+            const parsed = raw;
             setUser(parsed);
             if (parsed.profile) {
               setProfile(parsed.profile);
@@ -72,11 +76,10 @@ export function AuthProvider({ children }) {
       setProfileOwnerId(user.id);
       setUser((prev) => (prev ? { ...prev, profile: data } : prev));
       try {
-        const storedRaw = localStorage.getItem("fitvision_user");
-        if (storedRaw) {
-          const stored = JSON.parse(storedRaw);
+        const stored = getStorageJSON(STORAGE_KEYS.USER);
+        if (stored) {
           stored.profile = data;
-          localStorage.setItem("fitvision_user", JSON.stringify(stored));
+          setStorageItem(STORAGE_KEYS.USER, stored);
         }
       } catch (storageErr) {
         console.error("Cannot persist profile:", storageErr);

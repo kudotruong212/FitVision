@@ -1,7 +1,8 @@
 // src/pages/WorkoutPlan.jsx
 import React from "react";
 import { Link } from "react-router-dom";
-import { fetchScanHistory } from "../api/client";
+import { fetchScanHistory } from "../api/services/scanService.js";
+import { getStorageJSON } from "../api/utils/storage.js";
 
 export default function WorkoutPlan() {
   const [history, setHistory] = React.useState([]);
@@ -24,9 +25,9 @@ export default function WorkoutPlan() {
       if (latestWithPlan) {
         setSelectedId(latestWithPlan._id);
       } else {
-        const local = localStorage.getItem("fitvision_last_analysis");
+        const local = getStorageJSON("fitvision_last_analysis");
         if (local) {
-          const parsed = JSON.parse(local);
+          const parsed = local;
           if (parsed.plan) {
             setHistory([
               {

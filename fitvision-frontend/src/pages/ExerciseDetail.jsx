@@ -1,7 +1,7 @@
 // src/pages/ExerciseDetail.jsx
 import React from "react";
 import { useParams, Link } from "react-router-dom";
-import { fetchExerciseBySlug } from "../api/client";
+import { fetchExerciseBySlug } from "../api/services/exerciseService.js";
 import ExerciseViewer3D from "../components/ExerciseViewer3D";
 
 export default function ExerciseDetail() {

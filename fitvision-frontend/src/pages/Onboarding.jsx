@@ -1,7 +1,7 @@
 // src/pages/Onboarding.jsx
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { updateProfile } from "../api/client";
+import { updateProfile } from "../api/services/profileService.js";
 import { useAuth } from "../context/AuthContext.jsx";
 
 const experienceOptions = [
@@ -258,4 +258,5 @@ export default function Onboarding() {
     </div>
   );
 }
+
 

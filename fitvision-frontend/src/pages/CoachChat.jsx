@@ -1,11 +1,11 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { fetchCoachContext } from "../api/client";
 import {
+  fetchCoachContext,
   fetchCoachThread,
   sendCoachMessage,
   resetCoachThread,
-} from "../api/coachApi";
+} from "../api/services/coachService.js";
 import { useAuth } from "../context/AuthContext.jsx";
 
 export default function CoachChat() {

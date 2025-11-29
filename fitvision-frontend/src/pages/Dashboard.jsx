@@ -1,6 +1,6 @@
 // src/pages/Dashboard.jsx
 import React from "react";
-import { fetchScanStats, downloadWeeklyReport } from "../api/client";
+import { fetchScanStats, downloadWeeklyReport } from "../api/services/statsService.js";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
