@@ -13,6 +13,7 @@ import ThreeLab from "./pages/ThreeLab";
 import ExerciseDetail from "./pages/ExerciseDetail";
 import Dashboard from "./pages/Dashboard";
 import Profile from "./pages/Profile";
+import Onboarding from "./pages/Onboarding";
 
 
 
@@ -71,6 +72,14 @@ export default function App() {
             element={
               <RequireAuth>
                 <Profile />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/onboarding"
+            element={
+              <RequireAuth>
+                <Onboarding />
               </RequireAuth>
             }
           />

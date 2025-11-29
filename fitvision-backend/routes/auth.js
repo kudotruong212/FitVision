@@ -29,13 +29,13 @@ function validatePassword(password) {
     return PASSWORD_REGEX.test(password || "");
 }
 
-function signToken(user) {
+function signToken(user, rememberMe = false) {
     const payload = {
         sub: user._id.toString(),
         email: user.email,
     };
     const secret = process.env.JWT_SECRET;
-    const expiresIn = process.env.JWT_EXPIRES_IN || "7d";
+    const expiresIn = rememberMe ? (process.env.JWT_EXPIRES_IN || "7d") : "1d";
 
     return jwt.sign(payload, secret, { expiresIn });
 }
@@ -45,6 +45,7 @@ function buildUserResponse(user) {
         id: user._id,
         name: user.name,
         email: user.email,
+        email_verified: user.email_verified || false,
         profile: serializeProfile(user.profile),
     };
 }
@@ -107,7 +108,8 @@ router.post("/register", authLimiter, async (req, res) => {
 
         enqueueEmailVerification(user);
 
-        const token = signToken(user);
+        const rememberMe = req.body.rememberMe === true;
+        const token = signToken(user, rememberMe);
 
         res.json({
             token,
@@ -150,7 +152,8 @@ router.post("/login", authLimiter, async (req, res) => {
                 .json({ error: "Sai email hoặc mật khẩu." });
         }
 
-        const token = signToken(user);
+        const rememberMe = req.body.rememberMe === true;
+        const token = signToken(user, rememberMe);
 
         res.json({
             token,
@@ -159,6 +162,162 @@ router.post("/login", authLimiter, async (req, res) => {
     } catch (err) {
         console.error("Login error:", err);
         res.status(500).json({ error: "Cannot login" });
+    }
+});
+
+/**
+ * POST /api/auth/forgot-password
+ * body: { email }
+ */
+router.post("/forgot-password", authLimiter, async (req, res) => {
+    try {
+        const { email } = req.body || {};
+        if (!email) {
+            return res.status(400).json({ error: "Email là bắt buộc." });
+        }
+
+        if (!validateEmail(email)) {
+            return res.status(400).json({ error: "Email không hợp lệ." });
+        }
+
+        const user = await User.findOne({ email });
+        // Luôn trả về success để không leak thông tin về email tồn tại
+        if (user) {
+            try {
+                const resetToken = jwt.sign(
+                    { sub: user._id.toString(), type: "reset-password" },
+                    process.env.JWT_SECRET,
+                    { expiresIn: "1h" }
+                );
+                // Hook cho dịch vụ email thực tế
+                console.log(
+                    `[reset-password] Send reset link to ${user.email} with token ${resetToken}`
+                );
+            } catch (err) {
+                console.error("enqueuePasswordReset error:", err.message);
+            }
+        }
+
+        res.json({
+            message: "Nếu email tồn tại, bạn sẽ nhận được link đặt lại mật khẩu.",
+        });
+    } catch (err) {
+        console.error("Forgot password error:", err);
+        res.status(500).json({ error: "Cannot process request" });
+    }
+});
+
+/**
+ * POST /api/auth/reset-password
+ * body: { token, newPassword }
+ */
+router.post("/reset-password", authLimiter, async (req, res) => {
+    try {
+        const { token, newPassword } = req.body || {};
+        if (!token || !newPassword) {
+            return res
+                .status(400)
+                .json({ error: "Token và mật khẩu mới là bắt buộc." });
+        }
+
+        if (!validatePassword(newPassword)) {
+            return res.status(400).json({
+                error:
+                    "Mật khẩu phải ≥ 8 ký tự và có ít nhất 1 chữ hoa, 1 chữ thường, 1 số.",
+            });
+        }
+
+        let payload;
+        try {
+            payload = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(400).json({ error: "Token không hợp lệ hoặc đã hết hạn." });
+        }
+
+        if (payload.type !== "reset-password") {
+            return res.status(400).json({ error: "Token không hợp lệ." });
+        }
+
+        const user = await User.findById(payload.sub);
+        if (!user) {
+            return res.status(404).json({ error: "Người dùng không tồn tại." });
+        }
+
+        const password_hash = await bcrypt.hash(newPassword, 10);
+        user.password_hash = password_hash;
+        await user.save();
+
+        res.json({ message: "Mật khẩu đã được đặt lại thành công." });
+    } catch (err) {
+        console.error("Reset password error:", err);
+        res.status(500).json({ error: "Cannot reset password" });
+    }
+});
+
+/**
+ * POST /api/auth/verify-email
+ * body: { token }
+ */
+router.post("/verify-email", authLimiter, async (req, res) => {
+    try {
+        const { token } = req.body || {};
+        if (!token) {
+            return res.status(400).json({ error: "Token là bắt buộc." });
+        }
+
+        let payload;
+        try {
+            payload = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(400).json({ error: "Token không hợp lệ hoặc đã hết hạn." });
+        }
+
+        if (payload.type !== "verify-email") {
+            return res.status(400).json({ error: "Token không hợp lệ." });
+        }
+
+        const user = await User.findById(payload.sub);
+        if (!user) {
+            return res.status(404).json({ error: "Người dùng không tồn tại." });
+        }
+
+        user.email_verified = true;
+        await user.save();
+
+        res.json({ message: "Email đã được xác nhận thành công." });
+    } catch (err) {
+        console.error("Verify email error:", err);
+        res.status(500).json({ error: "Cannot verify email" });
+    }
+});
+
+/**
+ * POST /api/auth/resend-verification
+ * Requires authentication
+ */
+router.post("/resend-verification", authLimiter, async (req, res) => {
+    try {
+        // This endpoint should be protected, but for now we'll check email in body
+        const { email } = req.body || {};
+        if (!email) {
+            return res.status(400).json({ error: "Email là bắt buộc." });
+        }
+
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({ error: "Người dùng không tồn tại." });
+        }
+
+        if (user.email_verified) {
+            return res.json({ message: "Email đã được xác nhận rồi." });
+        }
+
+        enqueueEmailVerification(user);
+
+        res.json({ message: "Email xác nhận đã được gửi lại." });
+    } catch (err) {
+        console.error("Resend verification error:", err);
+        res.status(500).json({ error: "Cannot resend verification" });
     }
 });
 

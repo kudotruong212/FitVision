@@ -282,12 +282,12 @@ function ExerciseList({ exercises }) {
   }
 
   return (
-    <ul className="space-y-2 text-sm text-gray-200">
+      <ul className="space-y-2 text-sm text-gray-200">
       {exercises.map((ex, i) => (
-        <li
+          <li
           key={`${ex.name}-${i}`}
-          className="flex flex-col sm:flex-row sm:items-center sm:justify-between border border-slate-700 rounded-xl px-3 py-2 bg-slate-900/40 gap-2"
-        >
+            className="flex flex-col sm:flex-row sm:items-center sm:justify-between border border-slate-700 rounded-xl px-3 py-2 bg-slate-900/40 gap-2"
+          >
           <div className="space-y-1">
             <div>
               {ex.slug ? (
@@ -327,16 +327,16 @@ function ExerciseList({ exercises }) {
             )}
           </div>
           <div className="text-sm text-emerald-300 text-right">
-            {ex.sets && ex.reps ? (
-              <>
-                {ex.sets} x {ex.reps}
-              </>
-            ) : (
+              {ex.sets && ex.reps ? (
+                <>
+                  {ex.sets} x {ex.reps}
+                </>
+              ) : (
               ex.sets || ex.reps || ex.hold || ""
-            )}
-          </div>
-        </li>
-      ))}
-    </ul>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
   );
 }
