@@ -2,22 +2,45 @@
 import React from "react";
 import { fetchScanStats, downloadWeeklyReport } from "../api/client";
 import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const [stats, setStats] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
   const [exporting, setExporting] = React.useState(false);
 
   React.useEffect(() => {
-    loadStats();
-  }, []);
+    // 🔒 SECURITY: Reload stats when user changes to prevent data leakage
+    if (user?.id) {
+      loadStats();
+    } else {
+      // Clear stats if user logs out
+      setStats(null);
+      setLoading(false);
+    }
+  }, [user?.id]); // Reload when user ID changes
 
   async function loadStats() {
     try {
       setLoading(true);
       setError(null);
       const data = await fetchScanStats();
+      
+      // Validate data structure
+      if (!data || typeof data !== "object") {
+        console.warn("[SECURITY] Invalid stats data received:", data);
+        setError("Dữ liệu không hợp lệ từ server.");
+        return;
+      }
+      
+      // Ensure required fields exist
+      if (typeof data.totalScans !== "number" || data.totalScans < 0) {
+        console.warn("[SECURITY] Invalid totalScans:", data.totalScans);
+        data.totalScans = 0;
+      }
+      
       setStats(data);
     } catch (e) {
       console.error(e);

@@ -33,7 +33,30 @@ export default function History() {
       setLoading(true);
       setError(null);
       const data = await fetchScanHistory(100);
-      setItems(data || []);
+      
+      // Validate data structure
+      if (!Array.isArray(data)) {
+        console.warn("[SECURITY] Invalid history data received:", data);
+        setError("Dữ liệu không hợp lệ từ server.");
+        setItems([]);
+        return;
+      }
+      
+      // Validate each item has required fields
+      const validItems = data.filter((item) => {
+        if (!item || typeof item !== "object") {
+          console.warn("[SECURITY] Invalid history item:", item);
+          return false;
+        }
+        // Ensure item has _id (from server) or id (from local)
+        if (!item._id && !item.id) {
+          console.warn("[SECURITY] History item missing ID:", item);
+          return false;
+        }
+        return true;
+      });
+      
+      setItems(validItems);
       setSelected([]);
     } catch (e) {
       console.error(e);

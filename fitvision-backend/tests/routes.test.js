@@ -202,7 +202,9 @@ describe("Stats endpoint", () => {
       createdAt: new Date(Date.now() - 86400000),
     });
 
-    const statsRes = await request(app).get("/api/stats/scan-summary");
+    const statsRes = await request(app)
+      .get("/api/stats/scan-summary")
+      .set("Authorization", `Bearer ${token}`);
     expect(statsRes.status).toBe(200);
     expect(statsRes.body.totalScans).toBeGreaterThanOrEqual(1);
     expect(Array.isArray(statsRes.body.byDay)).toBe(true);
@@ -231,11 +233,15 @@ describe("Workout plan endpoint", () => {
       return Promise.resolve({ data: {} });
     });
 
-    const res = await request(app).post("/api/plan/generate").send({
-      score: 72,
-      weak_muscles: ["upper back"],
-      fat_area: "waist",
-    });
+    const { token } = await registerAndLogin();
+    const res = await request(app)
+      .post("/api/plan/generate")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        score: 72,
+        weak_muscles: ["upper back"],
+        fat_area: "waist",
+      });
 
     expect(res.status).toBe(200);
     expect(res.body.level).toBe("Intermediate");
@@ -251,10 +257,14 @@ describe("Workout plan endpoint", () => {
       return Promise.resolve({ data: {} });
     });
 
-    const res = await request(app).post("/api/plan/generate").send({
-      score: 40,
-      weak_muscles: ["shoulder"],
-    });
+    const { token } = await registerAndLogin();
+    const res = await request(app)
+      .post("/api/plan/generate")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        score: 40,
+        weak_muscles: ["shoulder"],
+      });
 
     expect(res.status).toBe(200);
     expect(res.body.source).toBe("fallback");

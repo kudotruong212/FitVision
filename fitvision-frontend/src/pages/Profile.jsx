@@ -1,5 +1,5 @@
 import React from "react";
-import { updateProfile } from "../api/client";
+import { updateProfile, resendVerificationEmail } from "../api/client";
 import { useAuth } from "../context/AuthContext.jsx";
 
 const experienceOptions = [
@@ -54,10 +54,11 @@ function commaStringToArray(value) {
 }
 
 export default function ProfilePage() {
-  const { profile, profileLoading, refreshProfile } = useAuth();
+  const { user, profile, profileLoading, refreshProfile } = useAuth();
   const [form, setForm] = React.useState(profileToForm(profile));
   const [saving, setSaving] = React.useState(false);
   const [status, setStatus] = React.useState(null);
+  const [resending, setResending] = React.useState(false);
 
   React.useEffect(() => {
     setForm(profileToForm(profile));
@@ -101,6 +102,21 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleResendVerification() {
+    if (!user?.email) return;
+    setResending(true);
+    try {
+      await resendVerificationEmail(user.email);
+      setStatus({ type: "success", message: "Email xác nhận đã được gửi lại. Vui lòng kiểm tra hộp thư." });
+    } catch (err) {
+      setStatus({ type: "error", message: err.response?.data?.error || "Không gửi được email." });
+    } finally {
+      setResending(false);
+    }
+  }
+
+  const emailVerified = user?.email_verified !== false;
+
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <div>
@@ -113,6 +129,34 @@ export default function ProfilePage() {
           hơn cho Workout Plan và Coach Chat.
         </p>
       </div>
+
+      {!emailVerified && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-amber-400 text-lg">⚠️</span>
+              <h3 className="text-amber-300 font-semibold">Email chưa được xác nhận</h3>
+            </div>
+            <p className="text-amber-200/80 text-sm">
+              Vui lòng xác nhận email {user?.email} để đảm bảo tài khoản an toàn.
+            </p>
+          </div>
+          <button
+            onClick={handleResendVerification}
+            disabled={resending}
+            className="px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-sm font-medium hover:bg-amber-500/30 disabled:opacity-60 transition-colors"
+          >
+            {resending ? "Đang gửi..." : "Gửi lại email"}
+          </button>
+        </div>
+      )}
+
+      {emailVerified && (
+        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 flex items-center gap-2">
+          <span className="text-emerald-400">✓</span>
+          <span className="text-emerald-300 text-sm">Email đã được xác nhận</span>
+        </div>
+      )}
 
       <form
         onSubmit={handleSubmit}
@@ -254,5 +298,6 @@ function FieldInput({ label, ...rest }) {
     </div>
   );
 }
+
 
 

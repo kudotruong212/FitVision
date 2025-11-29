@@ -52,14 +52,46 @@ async function withRetry(requestFn, options = {}) {
 
 //Helper quản lý token
 const TOKEN_KEY = "fitvision_token";
+const USER_KEY = "fitvision_user";
+
+// Callback để xử lý khi token invalid (để AuthContext có thể logout)
+let onAuthErrorCallback = null;
+
+export function setOnAuthError(callback) {
+  onAuthErrorCallback = callback;
+}
+
+export function clearAuth() {
+  delete api.defaults.headers.common["Authorization"];
+  
+  // Clear all authentication-related localStorage
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  
+  // Clear cached scan data
+  localStorage.removeItem("fitvision_last_analysis");
+  
+  // Clear all history cache keys (fitvision_history_*)
+  const keysToRemove = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith("fitvision_history_")) {
+      keysToRemove.push(key);
+    }
+  }
+  keysToRemove.forEach(key => localStorage.removeItem(key));
+  
+  if (onAuthErrorCallback) {
+    onAuthErrorCallback();
+  }
+}
 
 export function setAuthToken(token) {
   if (token) {
     api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
     localStorage.setItem(TOKEN_KEY, token);
   } else {
-    delete api.defaults.headers.common["Authorization"];
-    localStorage.removeItem(TOKEN_KEY);
+    clearAuth();
   }
 }
 
@@ -68,6 +100,20 @@ const existingToken = localStorage.getItem(TOKEN_KEY);
 if (existingToken) {
   api.defaults.headers.common["Authorization"] = `Bearer ${existingToken}`;
 }
+
+// Axios response interceptor để xử lý 401 errors
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token invalid hoặc hết hạn
+      console.warn("Unauthorized request - clearing auth");
+      clearAuth();
+      // Redirect sẽ được xử lý bởi AuthContext hoặc component
+    }
+    return Promise.reject(error);
+  }
+);
 
 // ===============================
 // CHECK HEALTH
@@ -192,11 +238,12 @@ export async function fetchCoachContext() {
 // ===============================
 // AUTH
 // ===============================
-export async function registerUser({ name, email, password }) {
+export async function registerUser({ name, email, password, rememberMe = false }) {
   const res = await api.post("/api/auth/register", {
     name,
     email,
     password,
+    rememberMe,
   });
   const { token, user } = res.data;
   setAuthToken(token);
@@ -205,10 +252,11 @@ export async function registerUser({ name, email, password }) {
   return user;
 }
 
-export async function loginUser({ email, password }) {
+export async function loginUser({ email, password, rememberMe = false }) {
   const res = await api.post("/api/auth/login", {
     email,
     password,
+    rememberMe,
   });
   const { token, user } = res.data;
   setAuthToken(token);
@@ -217,8 +265,45 @@ export async function loginUser({ email, password }) {
 }
 
 export function logoutUser() {
-  setAuthToken(null);
-  localStorage.removeItem("fitvision_user");
+  clearAuth();
+}
+
+// Verify token với backend
+export async function verifyToken() {
+  try {
+    const res = await api.get("/api/profile/me");
+    return { valid: true, user: res.data };
+  } catch (error) {
+    if (error.response?.status === 401) {
+      return { valid: false };
+    }
+    throw error;
+  }
+}
+
+// Password reset
+export async function requestPasswordReset(email) {
+  const res = await api.post("/api/auth/forgot-password", { email });
+  return res.data;
+}
+
+export async function resetPassword(token, newPassword) {
+  const res = await api.post("/api/auth/reset-password", {
+    token,
+    newPassword,
+  });
+  return res.data;
+}
+
+// Email verification
+export async function verifyEmail(token) {
+  const res = await api.post("/api/auth/verify-email", { token });
+  return res.data;
+}
+
+export async function resendVerificationEmail(email) {
+  const res = await api.post("/api/auth/resend-verification", { email });
+  return res.data;
 }
 
 // Lấy danh sách bài tập

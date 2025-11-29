@@ -12,7 +12,7 @@ import { AnalysisLog } from "./models/AnalysisLog.js";
 import cloudinary from "./cloudinary.js";
 import authRoutes from "./routes/auth.js";
 import profileRoutes, { serializeProfile } from "./routes/profile.js";
-import { authRequired } from "./middleware/auth.js";
+import { authRequired, validateUserOwnership } from "./middleware/auth.js";
 import { Exercise } from "./models/Exercise.js";
 import { CoachThread } from "./models/CoachThread.js";
 
@@ -143,6 +143,11 @@ function getSignedImageUrl(publicId) {
 function serializeSession(session) {
   if (!session) return session;
   const plain = typeof session.toObject === "function" ? session.toObject() : { ...session };
+  
+  // 🔒 Security: Loại bỏ sensitive fields
+  delete plain.user; // Không trả về user ID
+  delete plain.__v; // Mongoose version key
+  
   if (plain.image_url) {
     plain.image_url = decryptSensitive(plain.image_url);
   }
@@ -349,80 +354,80 @@ app.get("/api/scan/quota", authRequired, (req, res) => {
 
 
 function buildFallbackPlan({ score = 60, weak_muscles = [], fat_area }) {
-  let level = "beginner";
-  let sessionsPerWeek = 3;
-  if (score >= 80) {
-    level = "advanced";
-    sessionsPerWeek = 5;
-  } else if (score >= 50) {
-    level = "intermediate";
-    sessionsPerWeek = 4;
-  }
+    let level = "beginner";
+    let sessionsPerWeek = 3;
+    if (score >= 80) {
+      level = "advanced";
+      sessionsPerWeek = 5;
+    } else if (score >= 50) {
+      level = "intermediate";
+      sessionsPerWeek = 4;
+    }
 
-  const focusAreas = new Set();
+    const focusAreas = new Set();
 
   weak_muscles.forEach((m = "") => {
-    focusAreas.add(m);
-    if (m.toLowerCase().includes("back")) focusAreas.add("posture");
-    if (m.toLowerCase().includes("core")) focusAreas.add("core stability");
-    if (m.toLowerCase().includes("shoulder")) focusAreas.add("shoulder mobility");
-  });
+      focusAreas.add(m);
+      if (m.toLowerCase().includes("back")) focusAreas.add("posture");
+      if (m.toLowerCase().includes("core")) focusAreas.add("core stability");
+      if (m.toLowerCase().includes("shoulder")) focusAreas.add("shoulder mobility");
+    });
 
-  if (fat_area) {
-    focusAreas.add("fat loss");
-    focusAreas.add("cardio");
-  }
+    if (fat_area) {
+      focusAreas.add("fat loss");
+      focusAreas.add("cardio");
+    }
 
-  const baseExercises = {
-    posture: [
-      { name: "Face Pull", slug: "face-pull", sets: "3", reps: "12–15" },
-      { name: "Band Pull Apart", slug: "band-pull-apart", sets: "3", reps: "15" },
-    ],
-    "upper back": [
-      { name: "Seated Row", slug: "seated-row", sets: "3", reps: "10–12" },
-      { name: "Lat Pulldown", slug: "lat-pulldown", sets: "3", reps: "10–12" },
-    ],
-    core: [
-      { name: "Plank", slug: "plank", sets: "3", reps: "30–45 giây" },
-      { name: "Dead Bug", slug: "dead-bug", sets: "3", reps: "12 mỗi bên" },
-    ],
-    "fat loss": [
-      { name: "Incline Walk", slug: "incline-walk", sets: "20–30 phút", reps: "" },
-      { name: "Cycling / Elliptical", slug: "cycling-elliptical", sets: "20 phút", reps: "" },
-    ],
-    cardio: [
-      { name: "Interval Bike", slug: "interval-bike", sets: "10x", reps: "30s work / 30s rest" },
-    ],
-    default_fullbody: [
-      { name: "Goblet Squat", slug: "goblet-squat", sets: "3", reps: "10–12" },
-      { name: "Push-up", slug: "push-up", sets: "3", reps: "tối đa có thể" },
-      { name: "Plank", slug: "plank", sets: "3", reps: "30–45 giây" },
-    ],
-  };
+    const baseExercises = {
+      posture: [
+        { name: "Face Pull", slug: "face-pull", sets: "3", reps: "12–15" },
+        { name: "Band Pull Apart", slug: "band-pull-apart", sets: "3", reps: "15" },
+      ],
+      "upper back": [
+        { name: "Seated Row", slug: "seated-row", sets: "3", reps: "10–12" },
+        { name: "Lat Pulldown", slug: "lat-pulldown", sets: "3", reps: "10–12" },
+      ],
+      core: [
+        { name: "Plank", slug: "plank", sets: "3", reps: "30–45 giây" },
+        { name: "Dead Bug", slug: "dead-bug", sets: "3", reps: "12 mỗi bên" },
+      ],
+      "fat loss": [
+        { name: "Incline Walk", slug: "incline-walk", sets: "20–30 phút", reps: "" },
+        { name: "Cycling / Elliptical", slug: "cycling-elliptical", sets: "20 phút", reps: "" },
+      ],
+      cardio: [
+        { name: "Interval Bike", slug: "interval-bike", sets: "10x", reps: "30s work / 30s rest" },
+      ],
+      default_fullbody: [
+        { name: "Goblet Squat", slug: "goblet-squat", sets: "3", reps: "10–12" },
+        { name: "Push-up", slug: "push-up", sets: "3", reps: "tối đa có thể" },
+        { name: "Plank", slug: "plank", sets: "3", reps: "30–45 giây" },
+      ],
+    };
 
   const focusArray = Array.from(focusAreas).filter(Boolean);
-  if (focusArray.length === 0) {
-    focusArray.push("full body");
-  }
+    if (focusArray.length === 0) {
+      focusArray.push("full body");
+    }
 
-  const sessions = [];
+    const sessions = [];
   for (let i = 0; i < sessionsPerWeek; i += 1) {
-    const focus = focusArray[i % focusArray.length];
+      const focus = focusArray[i % focusArray.length];
     const exList = baseExercises[focus] || baseExercises.default_fullbody;
-    sessions.push({
+      sessions.push({
       title: `Buổi ${i + 1} – ${focus}`,
       focus: [focus],
-      exercises: exList,
-    });
-  }
+        exercises: exList,
+      });
+    }
 
   return {
-    level,
-    sessions_per_week: sessionsPerWeek,
-    focus_areas: focusArray,
-    sessions,
+      level,
+      sessions_per_week: sessionsPerWeek,
+      focus_areas: focusArray,
+      sessions,
     source: "fallback",
-  };
+    };
 }
 
 async function requestAIWorkoutPlan(payload) {
@@ -438,7 +443,7 @@ async function requestAIWorkoutPlan(payload) {
   return response.data;
 }
 
-app.post("/api/plan/generate", async (req, res) => {
+app.post("/api/plan/generate", authRequired, async (req, res) => {
   const body = req.body || {};
   const hasNestedAnalysis =
     body &&
@@ -516,8 +521,9 @@ app.post("/api/scan/save", authRequired, async (req, res) => {
     }
 
     const userId = req.user._id; // 🔹 từ middleware authRequired
+    console.log(`[AUDIT] User ${userId} saving scan session (score: ${analysis.score || 'N/A'})`);
 
-    const storedImageUrl = encryptSensitive(analysis.image_url || null);
+  const storedImageUrl = encryptSensitive(analysis.image_url || null);
     const lastSession = await ScanSession.findOne({ user: userId })
       .sort({ createdAt: -1 })
       .lean();
@@ -580,11 +586,13 @@ app.get("/api/scan/history", authRequired, async (req, res) => {
   try {
     const limit = Number(req.query.limit || 20);
     const userId = req.user._id; // 🔹 từ middleware authRequired
+    console.log(`[AUDIT] User ${userId} accessing /api/scan/history (limit: ${limit})`);
 
     const list = await ScanSession.find({ user: userId })
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
+    console.log(`[AUDIT] User ${userId} found ${list.length} scan sessions`);
 
     const safeList = list.map((item) => serializeSession(item));
     res.json(safeList);
@@ -597,20 +605,26 @@ app.get("/api/scan/history", authRequired, async (req, res) => {
 // Lấy toàn bộ lịch sử scan
 app.get("/api/history/all", authRequired, async (req, res) => {
   try {
-    const sessions = await ScanSession.find({ user: req.user._id })
+    const userId = req.user._id;
+    console.log(`[AUDIT] User ${userId} accessing /api/history/all`);
+    const sessions = await ScanSession.find({ user: userId })
       .sort({ createdAt: -1 })
       .lean();
+    console.log(`[AUDIT] User ${userId} found ${sessions.length} total scan sessions`);
     res.json(sessions.map((item) => serializeSession(item)));
   } catch (err) {
     res.status(500).json({ error: "Cannot load history" });
   }
 });
 
-app.delete("/api/scan/:id", authRequired, async (req, res) => {
+app.delete("/api/scan/:id", authRequired, validateUserOwnership, async (req, res) => {
   try {
+    const userId = req.user._id;
+    const scanId = req.params.id;
+    console.log(`[AUDIT] User ${userId} attempting to delete scan ${scanId}`);
     const scan = await ScanSession.findOne({
-      _id: req.params.id,
-      user: req.user._id,
+      _id: scanId,
+      user: userId,
     });
     if (!scan) {
       return res.status(404).json({ error: "Scan not found" });
@@ -630,7 +644,7 @@ app.delete("/api/scan/:id", authRequired, async (req, res) => {
   }
 });
 
-app.get("/api/media/scan/:id", authRequired, async (req, res) => {
+app.get("/api/media/scan/:id", authRequired, validateUserOwnership, async (req, res) => {
   try {
     const scan = await ScanSession.findOne({
       _id: req.params.id,
@@ -664,7 +678,7 @@ app.post("/api/ai/chat", authRequired, async (req, res) => {
       profile: serializeProfile(req.user?.profile),
     };
     const response = await axios.post(`${AI_SERVICE_URL}/ai/chat`, payload, {
-      timeout: 30000,
+        timeout: 30000,
     });
 
     res.json(response.data);
@@ -882,11 +896,24 @@ app.get("/api/exercises/:slug", async (req, res) => {
 });
 
 // Thống kê các lần AI Body Scan
-app.get("/api/stats/scan-summary", async (req, res) => {
+app.get("/api/stats/scan-summary", authRequired, async (req, res) => {
   try {
-    const sessions = await ScanSession.find().sort({ createdAt: 1 }).lean();
-
-    if (!sessions.length) {
+    const userId = req.user._id; // 🔹 từ middleware authRequired
+    console.log(`[AUDIT] User ${userId} accessing /api/stats/scan-summary`);
+    
+    // 🔒 SECURITY: Đảm bảo chỉ query sessions của user này, loại bỏ null/undefined
+    const sessions = await ScanSession.find({ 
+      user: { $eq: userId, $ne: null } 
+    }).sort({ createdAt: 1 }).lean();
+    
+    // 🔒 SECURITY: Double-check - filter lại ở application level để đảm bảo
+    const filteredSessions = sessions.filter(s => 
+      s.user && s.user.toString() === userId.toString()
+    );
+    
+    console.log(`[AUDIT] User ${userId} found ${filteredSessions.length} scan sessions (filtered from ${sessions.length} total)`);
+    
+    if (!filteredSessions.length) {
       return res.json({
         totalScans: 0,
         avgScore: 0,
@@ -896,8 +923,8 @@ app.get("/api/stats/scan-summary", async (req, res) => {
       });
     }
 
-    const totalScans = sessions.length;
-    const scores = sessions
+    const totalScans = filteredSessions.length;
+    const scores = filteredSessions
       .map((s) => (typeof s.score === "number" ? s.score : null))
       .filter((x) => x !== null);
 
@@ -908,11 +935,11 @@ app.get("/api/stats/scan-summary", async (req, res) => {
           ) / 10
         : 0;
 
-    const last = sessions[sessions.length - 1];
+    const last = filteredSessions[filteredSessions.length - 1];
 
     // Gom theo ngày
     const byDayMap = {};
-    for (const s of sessions) {
+    for (const s of filteredSessions) {
       const d = new Date(s.createdAt);
       const key = d.toISOString().slice(0, 10); // YYYY-MM-DD
       if (!byDayMap[key]) {
@@ -965,7 +992,7 @@ app.get("/api/stats/scan-summary", async (req, res) => {
 
     const focusMap = {};
     const fatMap = {};
-    for (const session of sessions) {
+    for (const session of filteredSessions) {
       const focusList = Array.isArray(session.weak_muscles)
         ? session.weak_muscles
         : [];
@@ -1074,7 +1101,9 @@ app.get("/api/reports/weekly", authRequired, async (req, res) => {
 
 app.get("/api/metrics", authRequired, async (req, res) => {
   try {
-    const totalSessions = await ScanSession.countDocuments();
+    // System-wide metrics (AI latency, uptime) + user-specific scan count
+    const userId = req.user._id;
+    const totalSessions = await ScanSession.countDocuments({ user: userId });
     const avgAnalyze =
       aiMetrics.analyze.count > 0
         ? Math.round(
