@@ -1,6 +1,7 @@
 // src/App.jsx
 import { Routes, Route } from "react-router-dom";
 import Navbar from "./components/Navbar";
+import RequireAuth from "./components/RequireAuth.jsx";
 import Home from "./pages/Home";
 import BodyScan from "./pages/BodyScan";
 import WorkoutPlan from "./pages/WorkoutPlan";
@@ -11,6 +12,7 @@ import Auth from "./pages/Auth";
 import ThreeLab from "./pages/ThreeLab";
 import ExerciseDetail from "./pages/ExerciseDetail";
 import Dashboard from "./pages/Dashboard";
+import Profile from "./pages/Profile";
 
 
 
@@ -22,13 +24,56 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/auth" element={<Auth />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/scan" element={<BodyScan />} />
+          <Route
+            path="/dashboard"
+            element={
+              <RequireAuth>
+                <Dashboard />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/scan"
+            element={
+              <RequireAuth>
+                <BodyScan />
+              </RequireAuth>
+            }
+          />
           <Route path="/exercises" element={<Exercises />} />
           <Route path="/exercises/:slug" element={<ExerciseDetail />} />
-          <Route path="/plan" element={<WorkoutPlan />} />
-          <Route path="/history" element={<History />} />
-          <Route path="/coach" element={<CoachChat />} />
+          <Route
+            path="/plan"
+            element={
+              <RequireAuth>
+                <WorkoutPlan />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/history"
+            element={
+              <RequireAuth>
+                <History />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/coach"
+            element={
+              <RequireAuth>
+                <CoachChat />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <RequireAuth>
+                <Profile />
+              </RequireAuth>
+            }
+          />
           <Route path="/3d-lab" element={<ThreeLab />} />
         </Routes>
       </div>

@@ -10,6 +10,7 @@ const links = [
   { to: "/coach", label: "AI Coach" },
   { to: "/exercises", label: "Exercises" },
   { to: "/3d-lab", label: "3D Lab" },
+  { to: "/profile", label: "Profile" },
 ];
 
 const linkBase =

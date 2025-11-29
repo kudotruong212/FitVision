@@ -1,6 +1,10 @@
 // src/pages/History.jsx
 import React from "react";
-import { fetchScanHistory } from "../api/client";
+import {
+  fetchScanHistory,
+  fetchSignedScanImage,
+  deleteScanSession,
+} from "../api/client";
 
 const RISK_FILTERS = ["all", "low", "medium", "high"];
 const SORTING = [
@@ -18,6 +22,7 @@ export default function History() {
   const [search, setSearch] = React.useState("");
   const [selected, setSelected] = React.useState([]);
   const [planPreview, setPlanPreview] = React.useState(null);
+  const [deletingId, setDeletingId] = React.useState(null);
 
   React.useEffect(() => {
     loadHistory();
@@ -35,6 +40,24 @@ export default function History() {
       setError("Không tải được lịch sử từ server.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDelete(id) {
+    const confirmDelete = window.confirm(
+      "Bạn có chắc chắn muốn xóa bản scan này? Hành động không thể hoàn tác."
+    );
+    if (!confirmDelete) return;
+    try {
+      setDeletingId(id);
+      await deleteScanSession(id);
+      setItems((prev) => prev.filter((item) => item._id !== id));
+      setSelected((prev) => prev.filter((pid) => pid !== id));
+    } catch (err) {
+      console.error(err);
+      setError("Không xóa được bản ghi. Thử lại sau.");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -143,6 +166,8 @@ export default function History() {
             active={selected.includes(item._id)}
             onToggle={() => toggleSelect(item._id)}
             onOpenPlan={() => setPlanPreview(item.plan || item.analysis?.plan)}
+            onDelete={() => handleDelete(item._id)}
+            deleting={deletingId === item._id}
           />
         ))}
       </div>
@@ -173,11 +198,47 @@ export default function History() {
   }
 }
 
-function HistoryCard({ item, active, onToggle, onOpenPlan }) {
-  const imgUrl = item.image_url || item.analysis?.image_url || null;
+function HistoryCard({ item, active, onToggle, onOpenPlan, onDelete, deleting }) {
+  const [signedUrl, setSignedUrl] = React.useState(
+    item.signed_image_url || item.analysis?.signed_image_url || null
+  );
+  const imgUrl =
+    signedUrl ||
+    item.image_url ||
+    item.analysis?.image_url ||
+    null;
+
+  React.useEffect(() => {
+    let mounted = true;
+    if (!signedUrl && item._id) {
+      fetchSignedScanImage(item._id)
+        .then((res) => {
+          if (mounted && res?.url) {
+            setSignedUrl(res.url);
+          }
+        })
+        .catch((err) => {
+          console.error("Fetch signed image failed:", err);
+        });
+    }
+    return () => {
+      mounted = false;
+    };
+  }, [signedUrl, item._id]);
   const score = item.score ?? item.analysis?.score ?? "N/A";
   const risk = item.risk_level ?? item.analysis?.risk_level ?? "N/A";
   const posture = item.posture ?? item.analysis?.posture ?? "N/A";
+  const poseConfidence =
+    item.pose_confidence ?? item.analysis?.pose_confidence ?? null;
+  const poseWarning = item.pose_warning ?? item.analysis?.pose_warning ?? null;
+  const scoreDelta =
+    item.derived_metrics?.score_delta ??
+    item.analysis?.derived_metrics?.score_delta ??
+    null;
+  const poseSymmetry =
+    item.derived_metrics?.pose_symmetry ??
+    item.analysis?.derived_metrics?.pose_symmetry ??
+    null;
 
   return (
     <div
@@ -204,16 +265,25 @@ function HistoryCard({ item, active, onToggle, onOpenPlan }) {
               </div>
               <div className="text-xl font-semibold">Score: {score}</div>
             </div>
-            <button
-              onClick={onToggle}
-              className={`px-3 py-1.5 rounded-full text-xs border ${
-                active
-                  ? "bg-emerald-500 text-slate-900 border-emerald-500"
-                  : "border-slate-700 text-gray-300"
-              }`}
-            >
-              {active ? "Đang so sánh" : "So sánh"}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={onToggle}
+                className={`px-3 py-1.5 rounded-full text-xs border ${
+                  active
+                    ? "bg-emerald-500 text-slate-900 border-emerald-500"
+                    : "border-slate-700 text-gray-300"
+                }`}
+              >
+                {active ? "Đang so sánh" : "So sánh"}
+              </button>
+              <button
+                onClick={onDelete}
+                disabled={deleting}
+                className="px-3 py-1.5 rounded-full text-xs border border-red-500/40 text-red-300 disabled:opacity-60"
+              >
+                {deleting ? "Đang xóa..." : "Xóa"}
+              </button>
+            </div>
           </div>
 
           <div className="text-sm text-gray-300">
@@ -234,6 +304,27 @@ function HistoryCard({ item, active, onToggle, onOpenPlan }) {
             >
               Risk: {risk}
             </span>
+            {poseConfidence !== null && (
+              <span className="px-2 py-1 rounded-full border border-slate-600 text-gray-300">
+                Pose conf: {Math.round(poseConfidence * 100)}%
+              </span>
+            )}
+            {poseSymmetry !== null && (
+              <span className="px-2 py-1 rounded-full border border-slate-600 text-gray-300">
+                Symmetry: {poseSymmetry}%
+              </span>
+            )}
+            {scoreDelta !== null && (
+              <span
+                className={`px-2 py-1 rounded-full border ${
+                  scoreDelta >= 0
+                    ? "border-emerald-500/40 text-emerald-300"
+                    : "border-amber-500/40 text-amber-300"
+                }`}
+              >
+                Δ {scoreDelta} pts
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-3 text-xs">
@@ -241,6 +332,9 @@ function HistoryCard({ item, active, onToggle, onOpenPlan }) {
               <span className="text-gray-400">
                 Cơ yếu: {item.weak_muscles.join(", ")}
               </span>
+            )}
+            {poseWarning && (
+              <span className="text-amber-300">⚠ {poseWarning}</span>
             )}
             {item.plan && (
               <button
@@ -289,6 +383,28 @@ function ComparisonPanel({ items, onClear }) {
             <p className="text-sm text-gray-300">
               Posture: {item.posture ?? item.analysis?.posture ?? "N/A"}
             </p>
+            {(
+              item.pose_confidence ?? item.analysis?.pose_confidence
+            ) != null && (
+            <p className="text-xs text-gray-400">
+                Pose conf:{" "}
+                {Math.round(
+                  (item.pose_confidence ?? item.analysis?.pose_confidence) * 100
+                )}
+                %
+            </p>
+          )}
+            {(
+              item.derived_metrics?.score_delta ??
+              item.analysis?.derived_metrics?.score_delta
+            ) != null && (
+              <p className="text-xs text-gray-400">
+                Δ{" "}
+                {item.derived_metrics?.score_delta ??
+                  item.analysis?.derived_metrics?.score_delta}{" "}
+                pts
+              </p>
+            )}
             {item.plan && (
               <p className="text-xs text-gray-400 mt-1">
                 Focus: {(item.plan.focus_areas || []).join(", ")}

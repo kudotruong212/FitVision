@@ -1,12 +1,13 @@
 // src/pages/Dashboard.jsx
 import React from "react";
-import { fetchScanStats } from "../api/client";
+import { fetchScanStats, downloadWeeklyReport } from "../api/client";
 import { Link } from "react-router-dom";
 
 export default function Dashboard() {
   const [stats, setStats] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
+  const [exporting, setExporting] = React.useState(false);
 
   React.useEffect(() => {
     loadStats();
@@ -23,6 +24,26 @@ export default function Dashboard() {
       setError("Không tải được thống kê từ server.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleExport() {
+    try {
+      setExporting(true);
+      const blob = await downloadWeeklyReport();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "fitvision-weekly-report.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      setError("Không xuất được báo cáo tuần.");
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -48,7 +69,25 @@ export default function Dashboard() {
     );
   }
 
-  const { totalScans, avgScore, lastScore, lastScanAt, byDay } = stats;
+  const {
+    totalScans,
+    avgScore,
+    lastScore,
+    lastScanAt,
+    byDay,
+    rolling = {},
+    focusSummary = [],
+    fatAreas = [],
+  } = stats;
+  const WEEKLY_QUOTA_MAX = 7 * 20; // 7 ngày * 20 lượt/ngày (config mặc định)
+  const rollingAvg = rolling.avg7 ?? avgScore;
+  const rollingMonthly = rolling.avg30 ?? avgScore;
+  const volatility = rolling.volatility7 ?? 0;
+  const last7Usage = byDay.slice(-7).reduce((sum, d) => sum + (d.count || 0), 0);
+  const quotaUsagePercent =
+    WEEKLY_QUOTA_MAX > 0
+      ? Math.min(100, Math.round((last7Usage / WEEKLY_QUOTA_MAX) * 100))
+      : 0;
   const bestDay = byDay.reduce(
     (best, day) => ((day.avgScore || 0) > (best?.avgScore || 0) ? day : best),
     byDay[0] || null
@@ -89,6 +128,13 @@ export default function Dashboard() {
           >
             Refresh
           </button>
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="px-3 py-2 rounded-xl border border-emerald-500/50 text-sm text-emerald-200 disabled:opacity-60"
+          >
+            {exporting ? "Đang xuất..." : "Xuất CSV tuần"}
+          </button>
           <Link
             to="/scan"
             className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-900 text-sm font-semibold"
@@ -99,7 +145,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid md:grid-cols-4 gap-4">
+      <div className="grid md:grid-cols-5 gap-4">
         <StatCard
           label="Tổng số lần scan"
           value={totalScans}
@@ -125,6 +171,16 @@ export default function Dashboard() {
           subtitle={
             bestDay ? `Ngày ${bestDay.date}` : "Cần thêm dữ liệu để so sánh"
           }
+        />
+        <StatCard
+          label="Trung bình 7 ngày"
+          value={rollingAvg}
+          subtitle="Xu hướng gần nhất"
+        />
+        <StatCard
+          label="Biến động 7 ngày"
+          value={`${volatility} pts`}
+          subtitle="Độ dao động điểm"
         />
       </div>
 
@@ -164,7 +220,7 @@ export default function Dashboard() {
           />
           <InsightCard
             title="Nhắc nhở"
-            body="Đặt lịch scan cố định (ví dụ thứ 3 & thứ 6) để Dashboard ghi nhận trend rõ hơn."
+            body={`Đặt lịch scan cố định (ví dụ thứ 3 & thứ 6). Tuần qua bạn dùng ${quotaUsagePercent}% quota (≈${last7Usage} lần).`}
             cta={{ to: "/history", label: "Xem lịch sử gần đây" }}
           />
           <InsightCard
@@ -173,6 +229,11 @@ export default function Dashboard() {
             cta={{ to: "/coach", label: "Mở AI Coach" }}
           />
         </div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        <FocusList data={focusSummary} />
+        <FatBreakdown data={fatAreas} monthlyAvg={rollingMonthly} />
       </div>
 
       {/* Recent logs */}
@@ -303,6 +364,74 @@ function RecentDayList({ data }) {
           <div className="text-sm text-emerald-300">+{d.avgScore - 50} pts</div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function FocusList({ data }) {
+  return (
+    <div className="bg-slate-800 rounded-2xl border border-slate-700 p-5 space-y-3">
+      <div>
+        <h3 className="text-lg font-semibold">Focus cần ưu tiên</h3>
+        <p className="text-xs text-gray-400">
+          Dựa trên các nhóm cơ yếu xuất hiện nhiều nhất.
+        </p>
+      </div>
+      {data.length === 0 ? (
+        <p className="text-sm text-gray-400">Chưa đủ dữ liệu.</p>
+      ) : (
+        <ul className="space-y-2">
+          {data.map((item) => (
+            <li
+              key={item.focus}
+              className="flex items-center justify-between text-sm text-gray-200 border border-slate-700 rounded-xl px-3 py-2 bg-slate-900/40"
+            >
+              <div>
+                <p className="font-semibold">{item.focus}</p>
+                <p className="text-xs text-gray-400">
+                  {item.sessions} lần xuất hiện · Δ {item.avgDelta} pts
+                </p>
+              </div>
+              <span className="text-emerald-300 text-sm">
+                Avg {item.avgScore}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function FatBreakdown({ data, monthlyAvg }) {
+  return (
+    <div className="bg-slate-800 rounded-2xl border border-slate-700 p-5 space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Phân bố vùng mỡ</h3>
+          <p className="text-xs text-gray-400">
+            Theo thống kê tất cả phiên gần đây.
+          </p>
+        </div>
+        <span className="text-xs text-emerald-300">
+          Avg 30 ngày: {monthlyAvg}
+        </span>
+      </div>
+      {data.length === 0 ? (
+        <p className="text-sm text-gray-400">Chưa có dữ liệu vùng mỡ.</p>
+      ) : (
+        <div className="space-y-2">
+          {data.slice(0, 5).map((item) => (
+            <div
+              key={item.area}
+              className="flex items-center justify-between text-sm text-gray-200"
+            >
+              <span>{item.area}</span>
+              <span className="text-emerald-300">{item.count} lần</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -4,7 +4,8 @@ import axios from "axios";
 // ===============================
 // CẤU HÌNH API
 // ===============================
-export const API_BASE = "http://localhost:5000";
+export const API_BASE =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 // Tạo instance chung, có timeout + tự bắt lỗi
 const api = axios.create({
@@ -14,6 +15,40 @@ const api = axios.create({
 
 export { api }; 
 
+const RETRYABLE_STATUS = [408, 425, 429, 500, 502, 503, 504];
+
+async function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withRetry(requestFn, options = {}) {
+  const {
+    retries = 2,
+    delay = 500,
+    multiplier = 1.5,
+    retryOn = RETRYABLE_STATUS,
+    retryOnNetworkError = true,
+  } = options;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await requestFn();
+    } catch (error) {
+      const status = error.response?.status;
+      const isNetworkError = !status;
+      const shouldRetry =
+        (status && retryOn.includes(status)) ||
+        (retryOnNetworkError && isNetworkError);
+
+      if (!shouldRetry || attempt === retries) {
+        throw error;
+      }
+
+      const backoff = Math.round(delay * multiplier ** attempt);
+      await wait(backoff);
+    }
+  }
+}
 
 //Helper quản lý token
 const TOKEN_KEY = "fitvision_token";
@@ -52,11 +87,15 @@ export async function checkAIHealth() {
 // ===============================
 export async function analyzeBody(formData) {
   try {
-    const res = await api.post("/api/ai/analyze", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-      maxBodyLength: Infinity,
-      maxContentLength: Infinity,
-    });
+    const res = await withRetry(
+      () =>
+        api.post("/api/ai/analyze", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
+        }),
+      { retries: 2, delay: 600 }
+    );
     return res.data;
   } catch (error) {
     console.error("❌ analyzeBody error:", error.response?.data || error.message);
@@ -67,11 +106,16 @@ export async function analyzeBody(formData) {
 // ===============================
 // TẠO PLAN TẬP LUYỆN (AI / LOGIC BACKEND)
 // ===============================
-export async function generateWorkoutPlan(analysis) {
+export async function generateWorkoutPlan(analysis, profile = null) {
   try {
-    const res = await api.post("/api/plan/generate", analysis, {
-      timeout: 30000, // ⬅ 30 giây cho plan vì OpenAI có thể lâu
-    });
+    const payload = profile ? { analysis, profile } : analysis;
+    const res = await withRetry(
+      () =>
+        api.post("/api/plan/generate", payload, {
+          timeout: 30000,
+        }),
+      { retries: 1, delay: 800 }
+    );
     return res.data;
   } catch (error) {
     console.error(
@@ -85,6 +129,16 @@ export async function generateWorkoutPlan(analysis) {
 // Lưu history lên backend (MongoDB)
 export async function saveScanSession(analysis, plan) {
   const res = await api.post("/api/scan/save", { analysis, plan });
+  return res.data;
+}
+
+export async function fetchScanQuota() {
+  const res = await api.get("/api/scan/quota");
+  return res.data;
+}
+
+export async function fetchSignedScanImage(id) {
+  const res = await api.get(`/api/media/scan/${id}`);
   return res.data;
 }
 
@@ -104,14 +158,20 @@ export async function fetchScanHistory(limit = 20) {
   }
 }
 
+export async function deleteScanSession(id) {
+  const res = await api.delete(`/api/scan/${id}`);
+  return res.data;
+}
+
 // ===============================
 // AI COACH CHAT
 // ===============================
-export async function aiCoachChat(messages, analysis = null) {
+export async function aiCoachChat(messages, analysis = null, profile = null) {
   try {
     const res = await api.post("/api/ai/chat", {
       messages,
       analysis,
+      profile,
     });
     return res.data; // { answer: "..." }
   } catch (error) {
@@ -181,5 +241,25 @@ export async function fetchExerciseBySlug(slug) {
 // Thống kê scan summary (Dashboard)
 export async function fetchScanStats() {
   const res = await api.get("/api/stats/scan-summary");
+  return res.data;
+}
+
+// ===============================
+// USER PROFILE
+// ===============================
+export async function fetchProfile() {
+  const res = await api.get("/api/profile/me");
+  return res.data;
+}
+
+export async function updateProfile(profile) {
+  const res = await api.put("/api/profile/me", profile);
+  return res.data;
+}
+
+export async function downloadWeeklyReport() {
+  const res = await api.get("/api/reports/weekly", {
+    responseType: "blob",
+  });
   return res.data;
 }

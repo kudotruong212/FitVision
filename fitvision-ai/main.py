@@ -1,13 +1,29 @@
 import base64
+import io
 import json
 import os
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel
+
+try:
+    import numpy as np
+except Exception:  # pragma: no cover - optional dependency
+    np = None
+
+try:
+    from PIL import Image
+except Exception:  # pragma: no cover - optional dependency
+    Image = None
+
+try:
+    import mediapipe as mp
+except Exception:  # pragma: no cover - optional dependency
+    mp = None
 
 load_dotenv()
 
@@ -22,6 +38,39 @@ app.add_middleware(
 )
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+POSE_AVAILABLE = bool(mp and Image and np)
+mp_pose = mp.solutions.pose if POSE_AVAILABLE else None
+
+
+def run_pose_estimation(image_bytes: bytes):
+    if not POSE_AVAILABLE or mp_pose is None:
+        return None
+
+    try:
+        pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        image_np = np.array(pil_image)
+    except Exception as exc:  # pragma: no cover - fallback if pillow fails
+        print("Pose estimation decode error:", repr(exc))
+        return None
+
+    with mp_pose.Pose(static_image_mode=True) as pose:
+        results = pose.process(image_np)
+
+    if not results or not results.pose_landmarks:
+        return {"confidence": 0.0, "points": []}
+
+    landmarks = results.pose_landmarks.landmark
+    confidence = sum(lm.visibility for lm in landmarks) / len(landmarks)
+    points = [
+        {
+            "x": round(lm.x, 4),
+            "y": round(lm.y, 4),
+            "z": round(lm.z, 4),
+            "visibility": round(lm.visibility, 4),
+        }
+        for lm in landmarks
+    ]
+    return {"confidence": round(confidence, 3), "points": points}
 
 
 # ================= HEALTH CHECK =================
@@ -110,6 +159,20 @@ async def analyze_body(image: UploadFile = File(...)):
             "notes": ai_json.get("notes", ""),
         }
 
+        pose_data = run_pose_estimation(content)
+        if pose_data:
+            result["pose_confidence"] = pose_data.get("confidence")
+            result["pose_points"] = pose_data.get("points", [])
+            if pose_data.get("confidence", 0) < 0.5:
+                result["pose_warning"] = (
+                    "Độ tin cậy nhận diện pose thấp. Hãy chụp ảnh sáng và đứng thẳng hơn."
+                )
+        else:
+            result["pose_confidence"] = None
+            result["pose_points"] = []
+            if not POSE_AVAILABLE:
+                result["pose_warning"] = "Pose estimation module không khả dụng trên server."
+
         return result
 
     except Exception as e:
@@ -131,6 +194,18 @@ class BodyAnalysis(BaseModel):
     risk_level: Optional[str] = None
     notes: Optional[str] = None
 
+class ProfilePreferences(BaseModel):
+    goal: Optional[str] = None
+    experience_level: Optional[str] = None
+    preferred_modalities: List[str] = []
+    injuries: List[str] = []
+    equipment: List[str] = []
+    nutrition_style: Optional[str] = None
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    weekly_sessions_target: Optional[int] = None
+    notes: Optional[str] = None
+
 class ChatMessage(BaseModel):
     role: str  # "user" | "assistant" | "system"
     content: str
@@ -138,20 +213,34 @@ class ChatMessage(BaseModel):
 class CoachChatRequest(BaseModel):
     messages: List[ChatMessage]
     analysis: Optional[BodyAnalysis] = None  # dùng lại BodyAnalysis có sẵn
+    profile: Optional[ProfilePreferences] = None  # thông tin mục tiêu
 
 # ================= WORKOUT PLAN GENERATOR =================
 @app.post("/ai/plan/generate")
-async def generate_workout_plan(analysis: BodyAnalysis):
+async def generate_workout_plan(payload: Union[dict, BodyAnalysis]):
     """
-    Nhận kết quả Body Scan (BodyAnalysis),
+    Nhận kết quả Body Scan (BodyAnalysis) kèm hồ sơ mục tiêu (nếu có),
     sinh ra Workout Plan cá nhân hóa bằng GPT-4o-mini.
     """
     try:
-        # 1) Convert body analysis sang JSON string cho dễ embed
+        if isinstance(payload, BodyAnalysis):
+            analysis = payload
+            profile = None
+        else:
+            raw_analysis = payload.get("analysis") or payload
+            analysis = BodyAnalysis(**raw_analysis)
+            raw_profile = payload.get("profile")
+            profile = ProfilePreferences(**raw_profile) if raw_profile else None
+
         analysis_dict = analysis.model_dump()
         analysis_json_str = json.dumps(analysis_dict, ensure_ascii=False)
+        profile_section = ""
+        if profile:
+            profile_section = (
+                "Here are the client's goals, training preferences and constraints:\n"
+                f"{json.dumps(profile.model_dump(), ensure_ascii=False)}\n\n"
+            )
 
-        # 2) Prompt cho GPT
         system_prompt = (
             "You are an experienced strength & conditioning coach. "
             "You design safe, effective weekly gym/yoga workout plans "
@@ -161,6 +250,7 @@ async def generate_workout_plan(analysis: BodyAnalysis):
         user_prompt = (
             "Here is the body analysis of a Vietnamese client:\n"
             f"{analysis_json_str}\n\n"
+            f"{profile_section}"
             "Based on this, design a 1–2 week workout plan.\n"
             "- 3–5 sessions per week.\n"
             "- Each session has 3–6 exercises.\n"
@@ -189,7 +279,6 @@ async def generate_workout_plan(analysis: BodyAnalysis):
             "}\n"
         )
 
-        # 3) Gọi GPT text-only
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -200,7 +289,6 @@ async def generate_workout_plan(analysis: BodyAnalysis):
 
         content_str = resp.choices[0].message.content.strip()
 
-        # 4) Parse JSON plan
         try:
             plan_json = json.loads(content_str)
         except json.JSONDecodeError:
@@ -211,7 +299,6 @@ async def generate_workout_plan(analysis: BodyAnalysis):
             else:
                 raise
 
-        # 5) Trả về thẳng plan cho backend Node / frontend
         return plan_json
 
     except Exception as e:
@@ -236,6 +323,14 @@ async def ai_coach_chat(payload: CoachChatRequest):
                 f"{json.dumps(analysis_dict, ensure_ascii=False, indent=2)}\n\n"
             )
 
+        profile_text = ""
+        if payload.profile:
+            profile_dict = payload.profile.model_dump()
+            profile_text = (
+                "Dưới đây là hồ sơ mục tiêu & lịch sử chấn thương của khách hàng:\n"
+                f"{json.dumps(profile_dict, ensure_ascii=False, indent=2)}\n\n"
+            )
+
         # 2) Hệ thống prompt
         system_prompt = (
             "You are a Vietnamese fitness coach and physical therapist. "
@@ -254,6 +349,13 @@ async def ai_coach_chat(payload: CoachChatRequest):
                 {
                     "role": "system",
                     "content": context_text,
+                }
+            )
+        if profile_text:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": profile_text,
                 }
             )
 
@@ -288,6 +390,9 @@ def coach_chat(payload: dict):
 
     scan = ctx.get("latest_scan") or {}
     plan = ctx.get("plan") or {}
+    profile = payload.get("profile") or {}
+    pref_modalities = ", ".join(profile.get("preferred_modalities", [])) or "N/A"
+    injury_list = ", ".join(profile.get("injuries", [])) or "Không báo cáo"
 
     system_prompt = f"""
     You are FitVision AI Coach, a friendly but expert fitness trainer.
@@ -305,6 +410,14 @@ def coach_chat(payload: dict):
     Level: {plan.get('level')}
     Focus: {plan.get('focus_areas')}
     Sessions: {plan.get('sessions')}
+
+    Profile:
+    Goal: {profile.get('goal')}
+    Experience level: {profile.get('experience_level')}
+    Preferred modalities: {pref_modalities}
+    Injuries or pain points: {injury_list}
+    Equipment: {", ".join(profile.get('equipment', [])) or "Không rõ"}
+    Weekly session target: {profile.get('weekly_sessions_target')}
     """
 
     resp = client.chat.completions.create(

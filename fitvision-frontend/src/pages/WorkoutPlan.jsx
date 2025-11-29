@@ -220,24 +220,75 @@ function InfoBlock({ label, value }) {
 }
 
 function SessionCard({ session, index }) {
+  const focusTags = Array.isArray(session.focus)
+    ? session.focus
+    : session.focus
+    ? [session.focus]
+    : [];
+  const blocks = Array.isArray(session.blocks) ? session.blocks : [];
+  const exercises = Array.isArray(session.exercises) ? session.exercises : [];
+
   return (
     <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 space-y-2">
       <div className="flex items-center justify-between">
         <h3 className="text-xl font-semibold">
           {session.title || `Buổi ${index + 1}`}
         </h3>
-        <div className="text-xs text-gray-400">
-          {Array.isArray(session.focus)
-            ? session.focus.join(", ")
-            : session.focus}
+        <div className="flex flex-wrap gap-2">
+          {focusTags.map((tag) => (
+            <span
+              key={tag}
+              className="text-[11px] px-2 py-0.5 rounded-full bg-slate-900/60 border border-slate-600 text-gray-300"
+            >
+              {tag}
+            </span>
+          ))}
         </div>
       </div>
-      <ul className="space-y-2 text-sm text-gray-200">
-        {(session.exercises || []).map((ex, i) => (
-          <li
-            key={i}
-            className="flex flex-col sm:flex-row sm:items-center sm:justify-between border border-slate-700 rounded-xl px-3 py-2 bg-slate-900/40 gap-2"
-          >
+      {blocks.length > 0 ? (
+        <div className="space-y-3">
+          {blocks.map((block, idx) => (
+            <div
+              key={idx}
+              className="border border-slate-700 rounded-xl p-3 bg-slate-900/30 space-y-2"
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-white">
+                  {block.title || `Block ${idx + 1}`}
+                </p>
+                {block.duration && (
+                  <span className="text-xs text-gray-400">
+                    ⏱ {block.duration}
+                  </span>
+                )}
+              </div>
+              {block.description && (
+                <p className="text-xs text-gray-400">{block.description}</p>
+              )}
+              <ExerciseList exercises={block.exercises || []} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <ExerciseList exercises={exercises} />
+      )}
+    </div>
+  );
+}
+
+function ExerciseList({ exercises }) {
+  if (!exercises || exercises.length === 0) {
+    return <p className="text-sm text-gray-400">Chưa có bài tập cụ thể.</p>;
+  }
+
+  return (
+    <ul className="space-y-2 text-sm text-gray-200">
+      {exercises.map((ex, i) => (
+        <li
+          key={`${ex.name}-${i}`}
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between border border-slate-700 rounded-xl px-3 py-2 bg-slate-900/40 gap-2"
+        >
+          <div className="space-y-1">
             <div>
               {ex.slug ? (
                 <Link
@@ -254,22 +305,38 @@ function SessionCard({ session, index }) {
                   ({ex.muscle_group})
                 </span>
               )}
-              {ex.notes && (
-                <p className="text-xs text-gray-400 mt-1">{ex.notes}</p>
+              {ex.type && (
+                <span className="ml-2 text-[11px] text-gray-500 uppercase">
+                  {ex.type}
+                </span>
               )}
             </div>
-            <div className="text-sm text-emerald-300">
-              {ex.sets && ex.reps ? (
-                <>
-                  {ex.sets} x {ex.reps}
-                </>
-              ) : (
-                ex.sets || ex.reps || ""
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
+            {ex.notes && (
+              <p className="text-xs text-gray-400">{ex.notes}</p>
+            )}
+            {ex.equipment && (
+              <p className="text-[11px] text-gray-500">
+                Dụng cụ: {ex.equipment}
+              </p>
+            )}
+            {ex.duration && !ex.sets && !ex.reps && (
+              <p className="text-[11px] text-gray-500">⏱ {ex.duration}</p>
+            )}
+            {ex.tempo && (
+              <p className="text-[11px] text-gray-500">Tempo: {ex.tempo}</p>
+            )}
+          </div>
+          <div className="text-sm text-emerald-300 text-right">
+            {ex.sets && ex.reps ? (
+              <>
+                {ex.sets} x {ex.reps}
+              </>
+            ) : (
+              ex.sets || ex.reps || ex.hold || ""
+            )}
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }

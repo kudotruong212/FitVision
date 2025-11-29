@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:6
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+
+  ai-service:
+    build: ./fitvision-ai
+    restart: unless-stopped
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    ports:
+      - "8001:8001"
+
+  backend:
+    build: ./fitvision-backend
+    restart: unless-stopped
+    depends_on:
+      - mongo
+      - ai-service
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/fitvision
+      AI_SERVICE_URL: http://ai-service:8001
+      JWT_SECRET: ${JWT_SECRET:-super-secret}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-encryption-key}
+      SCAN_QUOTA_PER_DAY: ${SCAN_QUOTA_PER_DAY:-20}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-demo}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-demo}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-demo}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    ports:
+      - "5000:5000"
+
+  frontend:
+    build:
+      context: ./fitvision-frontend
+      dockerfile: Dockerfile
+    environment:
+      VITE_API_BASE_URL: http://backend:5000
+    depends_on:
+      - backend
+    ports:
+      - "4173:80"
+
