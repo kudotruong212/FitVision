@@ -79,14 +79,15 @@ export default function Dashboard() {
     focusSummary = [],
     fatAreas = [],
   } = stats;
+  const WEEKLY_QUOTA_MAX = 7 * 20; // 7 ngày * 20 lượt/ngày (config mặc định)
   const rollingAvg = rolling.avg7 ?? avgScore;
   const rollingMonthly = rolling.avg30 ?? avgScore;
   const volatility = rolling.volatility7 ?? 0;
   const last7Usage = byDay.slice(-7).reduce((sum, d) => sum + (d.count || 0), 0);
-  const quotaUsagePercent = Math.min(
-    100,
-    Math.round((last7Usage / (7 * 20 || 1)) * 100)
-  );
+  const quotaUsagePercent =
+    WEEKLY_QUOTA_MAX > 0
+      ? Math.min(100, Math.round((last7Usage / WEEKLY_QUOTA_MAX) * 100))
+      : 0;
   const bestDay = byDay.reduce(
     (best, day) => ((day.avgScore || 0) > (best?.avgScore || 0) ? day : best),
     byDay[0] || null
