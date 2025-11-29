@@ -2,9 +2,9 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import BodyScan from "../BodyScan.jsx";
-import * as api from "../../api/client";
+import * as api from "../../api/services/scanService";
 
-vi.mock("../../api/client", () => ({
+vi.mock("../../api/services/scanService", () => ({
   fetchScanQuota: vi.fn(),
   analyzeBody: vi.fn(),
   generateWorkoutPlan: vi.fn(),

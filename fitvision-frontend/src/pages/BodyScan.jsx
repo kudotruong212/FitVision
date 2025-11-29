@@ -1,61 +1,19 @@
 // src/pages/BodyScan.jsx
 import React from "react";
 import { Link } from "react-router-dom";
+import { toast } from "react-hot-toast";
 import {
   analyzeBody,
   generateWorkoutPlan,
   saveScanSession,
   fetchScanQuota,
-} from "../api/client";
+} from "../api/services/scanService.js";
 import { useAuth } from "../context/AuthContext.jsx";
+import LoadingSpinner from "../components/LoadingSpinner";
 
 // =================== Helpers ===================
 
-function getScoreLevel(score) {
-  if (score >= 80) {
-    return {
-      label: "Rất tốt",
-      colorClass: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
-    };
-  }
-  if (score >= 50) {
-    return {
-      label: "Ổn nhưng còn yếu",
-      colorClass: "bg-amber-500/20 text-amber-300 border-amber-500/40",
-    };
-  }
-  return {
-    label: "Cần cải thiện nhiều",
-    colorClass: "bg-red-500/20 text-red-300 border-red-500/40",
-  };
-}
-
-function validateImageQuality(file) {
-  const sizeKB = Math.round(file.size / 1024);
-  if (sizeKB < 80) {
-    return { ok: false, message: "Ảnh quá nhỏ (<80KB). Hãy chụp ảnh rõ hơn." };
-  }
-  if (sizeKB > 8 * 1024) {
-    return { ok: false, message: "Ảnh quá lớn (>8MB). Hãy nén hoặc chụp lại." };
-  }
-  return { ok: true, message: `Kích thước ảnh: ${sizeKB}KB` };
-}
-
-function getImageDimensions(file) {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      resolve({ width: img.width, height: img.height });
-      URL.revokeObjectURL(url);
-    };
-    img.onerror = () => {
-      resolve(null);
-      URL.revokeObjectURL(url);
-    };
-    img.src = url;
-  });
-}
+import { getScoreLevel, validateImageQuality, getImageDimensions } from "../utils/imageUtils.js";
 
 // =================== Component ===================
 
@@ -79,6 +37,7 @@ export default function BodyScan() {
   const [quotaMessage, setQuotaMessage] = React.useState(null);
   const [planStatus, setPlanStatus] = React.useState("idle"); // idle | loading | success | error
   const [planError, setPlanError] = React.useState(null);
+  const [uploadProgress, setUploadProgress] = React.useState(0);
   const profileReady = Boolean(profile && profile.goal);
   const profileSnapshot = profileReady ? profile : null;
 
@@ -150,13 +109,30 @@ export default function BodyScan() {
     setLatestPlan(null);
     setPlanStatus("loading");
     setPlanError(null);
+    setUploadProgress(0);
 
     try {
       const formData = new FormData();
       formData.append("image", file);
 
-      // 1) Gọi AI Body Scan (OpenAI Vision qua backend AI)
-      const analysisResponse = await analyzeBody(formData);
+      // 1) Gọi AI Body Scan (OpenAI Vision qua backend AI) với progress tracking
+      const analysisResponse = await analyzeBody(formData, (progressEvent) => {
+        if (progressEvent.total) {
+          const percentCompleted = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total
+          );
+          setUploadProgress(percentCompleted);
+        }
+      });
+      
+      setUploadProgress(100);
+      toast("Phân tích hoàn tất!", {
+        icon: "✅",
+        style: {
+          background: "#10b981",
+          color: "#fff",
+        },
+      });
       const { quota: serverQuota, ...analysis } = analysisResponse || {};
       if (serverQuota) {
         setQuotaInfo({ ...serverQuota, loading: false });
@@ -203,7 +179,9 @@ export default function BodyScan() {
       // 4) Hiển thị kết quả
       setResult(analysis);
     } catch (err) {
-      console.error(err);
+      console.error("BodyScan error:", err);
+      console.error("Error response:", err.response?.data);
+      
       if (err.response?.status === 429) {
         const quota = err.response?.data?.quota;
         if (quota) {
@@ -211,10 +189,22 @@ export default function BodyScan() {
         }
         setError(err.response?.data?.error || "Bạn đã hết lượt scan hôm nay.");
       } else {
-        setError("Có lỗi khi gọi AI phân tích.");
+        const errorMessage = err.response?.data?.message || 
+                            err.response?.data?.error || 
+                            err.message || 
+                            "Có lỗi khi gọi AI phân tích.";
+        setError(errorMessage);
+        toast(errorMessage, {
+          icon: "❌",
+          style: {
+            background: "#ef4444",
+            color: "#fff",
+          },
+        });
       }
       setPlanStatus("idle");
       setPlanError(null);
+      setUploadProgress(0);
     } finally {
       setLoading(false);
     }
@@ -311,10 +301,26 @@ export default function BodyScan() {
           <button
             onClick={handleAnalyze}
             disabled={loading || quotaInfo.loading || !quotaInfo.allowed}
-            className="mt-2 px-4 py-3 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 rounded-xl text-slate-900 font-semibold w-full"
+            className="mt-2 px-4 py-3 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 rounded-xl text-slate-900 font-semibold w-full flex items-center justify-center gap-2"
           >
-            {loading ? "Đang phân tích..." : "Phân tích cơ thể"}
+            {loading ? (
+              <>
+                <LoadingSpinner size="sm" />
+                <span>Đang phân tích... {uploadProgress > 0 && `${uploadProgress}%`}</span>
+              </>
+            ) : (
+              "Phân tích cơ thể"
+            )}
           </button>
+          
+          {loading && uploadProgress > 0 && uploadProgress < 100 && (
+            <div className="mt-2 w-full bg-slate-700 rounded-full h-2">
+              <div
+                className="bg-emerald-500 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          )}
 
           {error && <div className="mt-2 text-sm text-red-400">{error}</div>}
           {quotaMessage && (

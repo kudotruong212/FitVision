@@ -7,6 +7,13 @@ services:
     ports:
       - "27017:27017"
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+
   ai-service:
     build: ./fitvision-ai
     restart: unless-stopped
@@ -21,6 +28,7 @@ services:
     depends_on:
       - mongo
       - ai-service
+      - redis
     environment:
       MONGODB_URI: mongodb://mongo:27017/fitvision
       AI_SERVICE_URL: http://ai-service:8001
@@ -31,6 +39,7 @@ services:
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-demo}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-demo}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      REDIS_URL: redis://redis:6379
     ports:
       - "5000:5000"
 

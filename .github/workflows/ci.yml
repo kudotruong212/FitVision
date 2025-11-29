@@ -2,45 +2,119 @@ name: CI
 
 on:
   push:
-    branches: ["main", "master"]
+    branches: [main, develop]
   pull_request:
-    branches: ["main", "master"]
+    branches: [main, develop]
 
 jobs:
-  frontend:
+  backend-lint:
+    name: Backend Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: fitvision-backend/package-lock.json
       - name: Install dependencies
-        working-directory: fitvision-frontend
+        working-directory: ./fitvision-backend
         run: npm ci
-      - name: Lint
-        working-directory: fitvision-frontend
-        run: npm run lint
-      - name: Test
-        working-directory: fitvision-frontend
-        run: npm run test
+      - name: Run ESLint
+        working-directory: ./fitvision-backend
+        run: npm run lint || echo "Linting not configured yet"
 
-  backend:
+  backend-test:
+    name: Backend Test
     runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:6
+        ports:
+          - 27017:27017
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: fitvision-backend/package-lock.json
       - name: Install dependencies
-        working-directory: fitvision-backend
+        working-directory: ./fitvision-backend
         run: npm ci
-      - name: Test
-        working-directory: fitvision-backend
+      - name: Run tests
+        working-directory: ./fitvision-backend
         env:
-          OPENAI_API_KEY: test
+          MONGODB_URI: mongodb://localhost:27017/fitvision-test
+          JWT_SECRET: test-secret
+          DATA_ENCRYPTION_KEY: test-encryption-key-32-chars-long
+          NODE_ENV: test
         run: npm test
 
+  frontend-lint:
+    name: Frontend Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: fitvision-frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: ./fitvision-frontend
+        run: npm ci
+      - name: Run ESLint
+        working-directory: ./fitvision-frontend
+        run: npm run lint
 
+  frontend-test:
+    name: Frontend Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: fitvision-frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: ./fitvision-frontend
+        run: npm ci
+      - name: Run tests
+        working-directory: ./fitvision-frontend
+        run: npm test
 
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: fitvision-frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: ./fitvision-frontend
+        run: npm ci
+      - name: Build
+        working-directory: ./fitvision-frontend
+        env:
+          VITE_API_BASE_URL: http://localhost:5000
+        run: npm run build
 
-
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        working-directory: ./fitvision-backend
+        run: docker build -t fitvision-backend:test .
+      - name: Build frontend image
+        working-directory: ./fitvision-frontend
+        run: docker build -t fitvision-frontend:test .
+      - name: Build AI service image
+        working-directory: ./fitvision-ai
+        run: docker build -t fitvision-ai:test .

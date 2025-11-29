@@ -1,7 +1,7 @@
 // src/pages/Auth.jsx
 import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { loginUser, registerUser, requestPasswordReset, resetPassword } from "../api/client";
+import { loginUser, registerUser, requestPasswordReset, resetPassword, verifyEmail } from "../api/services/authService.js";
 import { useAuth } from "../context/AuthContext.jsx";
 
 export default function AuthPage() {
@@ -43,17 +43,15 @@ export default function AuthPage() {
         const verifyToken = params.get("verify");
         if (verifyToken && isAuthenticated) {
             // Handle email verification
-            import("../api/client").then(({ verifyEmail }) => {
-                verifyEmail(verifyToken)
-                    .then(() => {
-                        setSuccess("Email đã được xác nhận thành công!");
-                        // Refresh user data
-                        setUser((prev) => (prev ? { ...prev, email_verified: true } : prev));
-                    })
-                    .catch((err) => {
-                        setError(err.response?.data?.error || "Không xác nhận được email.");
-                    });
-            });
+            verifyEmail(verifyToken)
+                .then(() => {
+                    setSuccess("Email đã được xác nhận thành công!");
+                    // Refresh user data
+                    setUser((prev) => (prev ? { ...prev, email_verified: true } : prev));
+                })
+                .catch((err) => {
+                    setError(err.response?.data?.error || "Không xác nhận được email.");
+                });
         }
     }, [location.search, isAuthenticated, setUser]);
 

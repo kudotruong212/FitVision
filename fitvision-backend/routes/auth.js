@@ -5,6 +5,18 @@ import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
 import { User } from "../models/User.js";
 import { serializeProfile } from "./profile.js";
+import { validate } from "../middleware/validate.js";
+import {
+  registerSchema,
+  loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  verifyEmailSchema,
+  resendVerificationSchema,
+} from "../validators/authValidator.js";
+import { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } from "../services/emailService.js";
+import logger from "../utils/logger.js";
+import { emailQueue } from "../workers/emailWorker.js";
 
 const router = express.Router();
 
@@ -57,12 +69,15 @@ async function enqueueEmailVerification(user) {
             process.env.JWT_SECRET,
             { expiresIn: "1d" }
         );
-        // Hook cho dịch vụ email thực tế (SendGrid, Resend, v.v.)
-        console.log(
-            `[verify-email] Send verification link to ${user.email} with token ${token}`
-        );
+        // Try to use queue if available, otherwise send directly
+        const queue = await getEmailQueue();
+        if (queue) {
+            await queue.add('send-verification', { user, token });
+        } else {
+            await sendVerificationEmail(user, token);
+        }
     } catch (err) {
-        console.error("enqueueEmailVerification error:", err.message);
+        logger.error("enqueueEmailVerification error", { error: err.message });
     }
 }
 
@@ -70,7 +85,7 @@ async function enqueueEmailVerification(user) {
  * POST /api/auth/register
  * body: { name?, email, password }
  */
-router.post("/register", authLimiter, async (req, res) => {
+router.post("/register", authLimiter, validate(registerSchema), async (req, res) => {
     try {
         const { name, email, password } = req.body || {};
 
@@ -106,7 +121,38 @@ router.post("/register", authLimiter, async (req, res) => {
             password_hash,
         });
 
-        enqueueEmailVerification(user);
+        // Queue verification email (non-blocking)
+        const verifyToken = jwt.sign(
+            { sub: user._id.toString(), type: "verify-email" },
+            process.env.JWT_SECRET,
+            { expiresIn: "1d" }
+        );
+        getEmailQueue().then(queue => {
+            if (queue) {
+                queue.add('send-verification', { user, token: verifyToken }).catch(err => {
+                    logger.error("Failed to queue verification email", { error: err.message });
+                });
+                queue.add('send-welcome', { user }).catch(err => {
+                    logger.error("Failed to queue welcome email", { error: err.message });
+                });
+            } else {
+                // Fallback to direct sending
+                sendVerificationEmail(user, verifyToken).catch(err => {
+                    logger.error("Failed to send verification email", { error: err.message });
+                });
+                sendWelcomeEmail(user).catch(err => {
+                    logger.error("Failed to send welcome email", { error: err.message });
+                });
+            }
+        }).catch(() => {
+            // Fallback if queue import fails
+            sendVerificationEmail(user, verifyToken).catch(err => {
+                logger.error("Failed to send verification email", { error: err.message });
+            });
+            sendWelcomeEmail(user).catch(err => {
+                logger.error("Failed to send welcome email", { error: err.message });
+            });
+        });
 
         const rememberMe = req.body.rememberMe === true;
         const token = signToken(user, rememberMe);
@@ -116,7 +162,7 @@ router.post("/register", authLimiter, async (req, res) => {
             user: buildUserResponse(user),
         });
     } catch (err) {
-        console.error("Register error:", err);
+        logger.error("Register error", { error: err.message, stack: err.stack });
         res.status(500).json({ error: "Cannot register user" });
     }
 });
@@ -125,7 +171,7 @@ router.post("/register", authLimiter, async (req, res) => {
  * POST /api/auth/login
  * body: { email, password }
  */
-router.post("/login", authLimiter, async (req, res) => {
+router.post("/login", authLimiter, validate(loginSchema), async (req, res) => {
     try {
         const { email, password } = req.body || {};
         if (!email || !password) {
@@ -160,7 +206,7 @@ router.post("/login", authLimiter, async (req, res) => {
             user: buildUserResponse(user),
         });
     } catch (err) {
-        console.error("Login error:", err);
+        logger.error("Login error", { error: err.message, stack: err.stack });
         res.status(500).json({ error: "Cannot login" });
     }
 });
@@ -169,7 +215,7 @@ router.post("/login", authLimiter, async (req, res) => {
  * POST /api/auth/forgot-password
  * body: { email }
  */
-router.post("/forgot-password", authLimiter, async (req, res) => {
+router.post("/forgot-password", authLimiter, validate(forgotPasswordSchema), async (req, res) => {
     try {
         const { email } = req.body || {};
         if (!email) {
@@ -189,12 +235,12 @@ router.post("/forgot-password", authLimiter, async (req, res) => {
                     process.env.JWT_SECRET,
                     { expiresIn: "1h" }
                 );
-                // Hook cho dịch vụ email thực tế
-                console.log(
-                    `[reset-password] Send reset link to ${user.email} with token ${resetToken}`
-                );
+                // Queue password reset email
+                emailQueue.add('send-password-reset', { user, token: resetToken }).catch(err => {
+                    logger.error("Failed to queue password reset email", { error: err.message });
+                });
             } catch (err) {
-                console.error("enqueuePasswordReset error:", err.message);
+                logger.error("enqueuePasswordReset error", { error: err.message });
             }
         }
 
@@ -202,7 +248,7 @@ router.post("/forgot-password", authLimiter, async (req, res) => {
             message: "Nếu email tồn tại, bạn sẽ nhận được link đặt lại mật khẩu.",
         });
     } catch (err) {
-        console.error("Forgot password error:", err);
+        logger.error("Forgot password error", { error: err.message, stack: err.stack });
         res.status(500).json({ error: "Cannot process request" });
     }
 });
@@ -211,7 +257,7 @@ router.post("/forgot-password", authLimiter, async (req, res) => {
  * POST /api/auth/reset-password
  * body: { token, newPassword }
  */
-router.post("/reset-password", authLimiter, async (req, res) => {
+router.post("/reset-password", authLimiter, validate(resetPasswordSchema), async (req, res) => {
     try {
         const { token, newPassword } = req.body || {};
         if (!token || !newPassword) {
@@ -249,7 +295,7 @@ router.post("/reset-password", authLimiter, async (req, res) => {
 
         res.json({ message: "Mật khẩu đã được đặt lại thành công." });
     } catch (err) {
-        console.error("Reset password error:", err);
+        logger.error("Reset password error", { error: err.message, stack: err.stack });
         res.status(500).json({ error: "Cannot reset password" });
     }
 });
@@ -258,7 +304,7 @@ router.post("/reset-password", authLimiter, async (req, res) => {
  * POST /api/auth/verify-email
  * body: { token }
  */
-router.post("/verify-email", authLimiter, async (req, res) => {
+router.post("/verify-email", authLimiter, validate(verifyEmailSchema), async (req, res) => {
     try {
         const { token } = req.body || {};
         if (!token) {
@@ -286,7 +332,7 @@ router.post("/verify-email", authLimiter, async (req, res) => {
 
         res.json({ message: "Email đã được xác nhận thành công." });
     } catch (err) {
-        console.error("Verify email error:", err);
+        logger.error("Verify email error", { error: err.message, stack: err.stack });
         res.status(500).json({ error: "Cannot verify email" });
     }
 });
@@ -295,7 +341,7 @@ router.post("/verify-email", authLimiter, async (req, res) => {
  * POST /api/auth/resend-verification
  * Requires authentication
  */
-router.post("/resend-verification", authLimiter, async (req, res) => {
+router.post("/resend-verification", authLimiter, validate(resendVerificationSchema), async (req, res) => {
     try {
         // This endpoint should be protected, but for now we'll check email in body
         const { email } = req.body || {};
@@ -312,11 +358,11 @@ router.post("/resend-verification", authLimiter, async (req, res) => {
             return res.json({ message: "Email đã được xác nhận rồi." });
         }
 
-        enqueueEmailVerification(user);
+        await enqueueEmailVerification(user);
 
         res.json({ message: "Email xác nhận đã được gửi lại." });
     } catch (err) {
-        console.error("Resend verification error:", err);
+        logger.error("Resend verification error", { error: err.message, stack: err.stack });
         res.status(500).json({ error: "Cannot resend verification" });
     }
 });

@@ -10,6 +10,12 @@ const ScanSessionSchema = new mongoose.Schema(
       required: false, // sau này có thể nâng lên true
     },
     
+    // Soft delete support
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
+    
     filename: String,
     size_kb: Number,
 

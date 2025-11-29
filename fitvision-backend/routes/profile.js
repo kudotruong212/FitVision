@@ -1,5 +1,8 @@
 import express from "express";
 import { authRequired } from "../middleware/auth.js";
+import { validate } from "../middleware/validate.js";
+import { updateProfileSchema } from "../validators/profileValidator.js";
+import { get, set, del, cacheKeys } from "../services/cache.js";
 
 const router = express.Router();
 
@@ -53,11 +56,27 @@ export function serializeProfile(profileDoc) {
 
 router.use(authRequired);
 
-router.get("/me", (req, res) => {
-  res.json(serializeProfile(req.user.profile));
+router.get("/me", async (req, res) => {
+  try {
+    // Try cache first
+    const cacheKey = cacheKeys.userProfile(req.user._id.toString());
+    const cached = await get(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+
+    const profile = serializeProfile(req.user.profile);
+    
+    // Cache for 5 minutes
+    await set(cacheKey, profile, 300);
+    
+    res.json(profile);
+  } catch (err) {
+    res.json(serializeProfile(req.user.profile));
+  }
 });
 
-router.put("/me", async (req, res) => {
+router.put("/me", validate(updateProfileSchema), async (req, res) => {
   const payload = req.body || {};
   const nextProfile = {
     goal: (payload.goal || "").trim(),
@@ -82,7 +101,13 @@ router.put("/me", async (req, res) => {
   };
 
   await req.user.save();
-  res.json(serializeProfile(req.user.profile));
+  
+  // Invalidate cache
+  const cacheKey = cacheKeys.userProfile(req.user._id.toString());
+  await del(cacheKey);
+  
+  const updatedProfile = serializeProfile(req.user.profile);
+  res.json(updatedProfile);
 });
 
 export default router;
