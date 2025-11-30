@@ -2,7 +2,7 @@
 import React from "react";
 import { useParams, Link } from "react-router-dom";
 import { fetchExerciseBySlug } from "../api/services/exerciseService.js";
-import ExerciseViewer3D from "../components/ExerciseViewer3D";
+import ExerciseViewer3D from "../components/3d/ExerciseViewer3D";
 
 export default function ExerciseDetail() {
   const { slug } = useParams();
@@ -71,7 +71,15 @@ export default function ExerciseDetail() {
       </div>
 
       {/* Viewer 3D */}
-      <ExerciseViewer3D muscle_group={ex.muscle_group} />
+      <ExerciseViewer3D 
+        exerciseSlug={slug}
+        muscle_group={ex.muscle_group}
+        modelUrl={ex.model_3d_url}
+        height="80"
+        showControls={true}
+        autoPlay={false}
+        stepByStep={false}
+      />
 
       {/* Nội dung chi tiết */}
       <div className="grid md:grid-cols-[2fr,1fr] gap-6">

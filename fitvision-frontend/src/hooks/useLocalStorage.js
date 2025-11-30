@@ -1,7 +1,7 @@
 // src/hooks/useLocalStorage.js
 // Generic hook to manage localStorage with React state sync
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   getStorageItem,
   getStorageJSON,

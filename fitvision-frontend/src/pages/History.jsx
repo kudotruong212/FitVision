@@ -5,6 +5,7 @@ import {
   fetchSignedScanImage,
   deleteScanSession,
 } from "../api/services/scanService.js";
+import BodyScanViewer3D from "../components/3d/BodyScanViewer3D.jsx";
 
 const RISK_FILTERS = ["all", "low", "medium", "high"];
 const SORTING = [
@@ -382,18 +383,51 @@ function HistoryCard({ item, active, onToggle, onOpenPlan, onDelete, deleting })
 }
 
 function ComparisonPanel({ items, onClear }) {
+  const [show3D, setShow3D] = React.useState(false);
+  
   if (items.length === 0) return null;
+
+  // Get scan data for comparison
+  const scan1 = items[0];
+  const scan2 = items.length > 1 ? items[1] : null;
+  
+  const scan1Data = scan1.analysis || scan1;
+  const scan2Data = scan2 ? (scan2.analysis || scan2) : null;
+
   return (
     <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">So sánh đã chọn</h3>
-        <button
-          onClick={onClear}
-          className="text-xs text-gray-400 hover:text-white underline"
-        >
-          Xóa
-        </button>
+        <h3 className="text-lg font-semibold">So sánh đã chọn ({items.length})</h3>
+        <div className="flex gap-2">
+          {scan2Data && (
+            <button
+              onClick={() => setShow3D(!show3D)}
+              className="text-xs px-3 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30"
+            >
+              {show3D ? "Ẩn 3D" : "Hiện 3D"}
+            </button>
+          )}
+          <button
+            onClick={onClear}
+            className="text-xs text-gray-400 hover:text-white underline"
+          >
+            Xóa
+          </button>
+        </div>
       </div>
+
+      {/* 3D Comparison */}
+      {show3D && scan2Data && (
+        <div className="mb-4">
+          <BodyScanViewer3D
+            scanData={scan1Data}
+            comparisonData={scan2Data}
+            showComparison={true}
+            height="80"
+          />
+        </div>
+      )}
+
       <div className="grid md:grid-cols-2 gap-4">
         {items.map((item) => (
           <div key={item._id} className="border border-slate-700 rounded-xl p-3">

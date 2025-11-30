@@ -24,11 +24,9 @@ test.describe('Body Scan Flow', () => {
   test('should show error for invalid file', async ({ page }) => {
     await page.goto('http://localhost:5173/scan');
     
-    // Create a fake file input
-    const fileInput = page.locator('input[type="file"]');
-    
     // Note: Actual file upload testing requires proper file setup
     // This is a placeholder structure
+    // const fileInput = page.locator('input[type="file"]');
   });
 
   // Add more E2E tests as needed

@@ -10,6 +10,7 @@ import {
 } from "../api/services/scanService.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import LoadingSpinner from "../components/LoadingSpinner";
+import BodyScanViewer3D from "../components/3d/BodyScanViewer3D.jsx";
 
 // =================== Helpers ===================
 
@@ -404,6 +405,14 @@ export default function BodyScan() {
                   </p>
                 </div>
               </div>
+
+              {/* 3D Visualization */}
+              <BodyScanViewer3D
+                scanData={result}
+                height="80"
+                showComparison={false}
+                className="mt-4"
+              />
 
               {/* Body shape / risk / notes (nếu có) */}
               <div className="grid md:grid-cols-3 gap-4">

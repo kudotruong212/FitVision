@@ -103,3 +103,4 @@ router.get('/detailed', async (req, res) => {
 export default router;
 
 
+
