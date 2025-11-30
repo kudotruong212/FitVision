@@ -2,9 +2,8 @@
 // Body scan visualization with muscle highlighting and comparison
 
 import React, { useRef, useState, useEffect, Suspense } from "react";
-import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import BaseViewer3D, { useAnimationLoop, useRaycaster } from "./BaseViewer3D.jsx";
+import BaseViewer3D, { useAnimationLoop } from "./BaseViewer3D.jsx";
 import { createPrimitiveBody, loadModelWithFallback } from "../../utils/3d/modelLoader.js";
 import { 
   normalizeMuscleNames, 
@@ -14,11 +13,7 @@ import {
   getHighlightIntensity 
 } from "../../utils/3d/muscleMapping.js";
 import { 
-  highlightMuscleGroups, 
-  animateHighlightPulse,
-  setupClickDetection,
-  createTooltip,
-  removeTooltip
+  animateHighlightPulse
 } from "../../utils/3d/highlightSystem.js";
 import { MUSCLE_GROUPS } from "../../data/muscleData.js";
 import { getHumanBodyModelUrl } from "../../config/3dModels.js";
@@ -29,14 +24,10 @@ import { getHumanBodyModelUrl } from "../../config/3dModels.js";
 function BodyModel({ 
   modelUrl, 
   weakMuscles = [], 
-  fatAreas = [],
-  score = 0,
-  poseConfidence = 0,
-  onMuscleClick 
+  fatAreas = []
 }) {
   const groupRef = useRef();
   const [model, setModel] = useState(null);
-  const [highlights, setHighlights] = useState([]);
   const highlightsRef = useRef([]);
   const pulseAnimationsRef = useRef([]);
 
@@ -153,7 +144,7 @@ function BodyModel({
     });
 
     highlightsRef.current = newHighlights;
-    setHighlights(newHighlights);
+    // Highlights stored in ref, no state update needed
 
     return () => {
       newHighlights.forEach(({ outline }) => {
@@ -187,7 +178,7 @@ function BodyModel({
 /**
  * Score indicator
  */
-function ScoreIndicator({ score, poseConfidence }) {
+function ScoreIndicator({ poseConfidence }) {
   return (
     <group position={[0, 2.5, 0]}>
       <mesh>
@@ -214,8 +205,6 @@ export default function BodyScanViewer3D({
   onMuscleClick,
   className = "",
 }) {
-  const [selectedMuscle, setSelectedMuscle] = useState(null);
-  const tooltipRef = useRef(null);
 
   if (!scanData) {
     return (

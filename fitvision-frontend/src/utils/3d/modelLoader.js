@@ -91,7 +91,7 @@ export async function loadGLTFModel(url) {
  * Create an improved primitive human body shape as fallback
  * Better proportions and smoother appearance
  */
-export function createPrimitiveBody(muscleGroups = []) {
+export function createPrimitiveBody() {
   const group = new THREE.Group();
 
   // Improved materials with better shading

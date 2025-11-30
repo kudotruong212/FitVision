@@ -72,7 +72,7 @@ export function useScanHistory(limit = 20) {
 
   useEffect(() => {
     refetch();
-  }, [limit]);
+  }, [limit, refetch]);
 
   return { history, loading, error, refetch };
 }

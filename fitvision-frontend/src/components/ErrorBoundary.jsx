@@ -1,5 +1,6 @@
 // components/ErrorBoundary.jsx
 // Error boundary component for React error handling
+/* eslint-env node */
 
 import React from 'react';
 

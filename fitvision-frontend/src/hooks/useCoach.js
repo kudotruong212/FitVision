@@ -85,7 +85,7 @@ export function useCoachChat() {
       try {
         setLoading(true);
         await Promise.all([loadContext(), loadHistory()]);
-      } catch (err) {
+      } catch {
         // Error already set in individual functions
       } finally {
         setLoading(false);

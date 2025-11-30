@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { useGLTF } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import BaseViewer3D, { useAnimationLoop } from "./BaseViewer3D.jsx";
-import { AnimationController, createKeyframeAnimation, createExerciseKeyframes } from "../../utils/3d/animationController.js";
+import { AnimationController } from "../../utils/3d/animationController.js";
 import { createPrimitiveBody, loadModelWithFallback } from "../../utils/3d/modelLoader.js";
 import { getMuscleColor, getMusclePosition, getMuscleScale } from "../../utils/3d/muscleMapping.js";
 import { getMuscleGroupsForExercise } from "../../data/muscleData.js";
@@ -18,8 +18,6 @@ import { getExerciseModelUrl } from "../../config/3dModels.js";
  */
 const GLTFModelLoader = React.forwardRef(function GLTFModelLoader({ 
   modelUrl,
-  exerciseSlug,
-  muscleGroup,
   isPlaying,
   speed,
   onAnimationReady,
@@ -28,7 +26,6 @@ const GLTFModelLoader = React.forwardRef(function GLTFModelLoader({
   const mixerRef = useRef();
   const controllerRef = useRef();
   const isPlayingRef = useRef(false);
-  const sceneRef = useRef();
   
   // CRITICAL: useGLTF hook must be called unconditionally at top level
   // This preserves the link between scene and animations
@@ -154,7 +151,7 @@ const GLTFModelLoader = React.forwardRef(function GLTFModelLoader({
               console.log(`  - Hidden low-positioned mesh (likely platform): ${child.name || 'unnamed'}, y: ${childCenter.y.toFixed(2)}, sceneMinY: ${sceneMinY.toFixed(2)}`);
               return;
             }
-          } catch (e) {
+          } catch {
             // Ignore errors in bounding box calculation
           }
           
@@ -216,8 +213,10 @@ const GLTFModelLoader = React.forwardRef(function GLTFModelLoader({
       );
       
       // Đánh dấu đã center để tránh tính lại
-      if (!gltfData.scene.userData) gltfData.scene.userData = {};
-      gltfData.scene.userData.centered = true;
+      // Use Object.assign to avoid direct mutation
+      const userData = gltfData.scene.userData || {};
+      Object.assign(userData, { centered: true });
+      gltfData.scene.userData = userData;
       
       console.log(`📍 GLTFModelLoader - Centered model at origin (torso):`, {
         boundingBox: {
@@ -620,6 +619,19 @@ const ExerciseModel = React.forwardRef(function ExerciseModel({
     }
   }, [isPlaying]);
 
+  // Expose model ref to parent for highlighting
+  // MUST be called before any early returns to follow Rules of Hooks
+  useEffect(() => {
+    if (model && groupRef.current) {
+      const modelObject = groupRef.current.object || model;
+      if (typeof ref === 'function') {
+        ref(modelObject);
+      } else if (ref) {
+        ref.current = modelObject;
+      }
+    }
+  }, [model, ref]);
+
   // Ensure model is visible and properly scaled (only once)
   // MUST be called before any early returns to follow Rules of Hooks
   useEffect(() => {
@@ -829,18 +841,6 @@ const ExerciseModel = React.forwardRef(function ExerciseModel({
     });
   }
   
-  // Expose model ref to parent for highlighting
-  useEffect(() => {
-    if (model && groupRef.current) {
-      const modelObject = groupRef.current.object || model;
-      if (typeof ref === 'function') {
-        ref(modelObject);
-      } else if (ref) {
-        ref.current = modelObject;
-      }
-    }
-  }, [model, ref]);
-  
   return <primitive ref={groupRef} object={model} />;
 });
 
@@ -848,30 +848,27 @@ const ExerciseModel = React.forwardRef(function ExerciseModel({
  * Muscle highlight component - highlights using separate boxes
  */
 function MuscleHighlight({ muscleGroups, modelRef }) {
-  const highlights = [];
+  const [offsetY, setOffsetY] = useState(0);
   
-  // Tính offset để điều chỉnh highlight position
-  // Model đã được center tại torso (60% từ chân lên), nên trong world space:
-  // - Torso center = (0, 0, 0)
-  // - Model center (full body) = box.getCenter() trong world space
-  // - Offset = worldModelCenter.y - 0 = worldModelCenter.y
-  let offsetY = 0;
-  
-  if (modelRef?.current) {
-    const box = new THREE.Box3().setFromObject(modelRef.current);
-    const worldCenter = box.getCenter(new THREE.Vector3());
-    // Offset là khoảng cách từ model center (toàn bộ) đến torso center (0, 0, 0)
-    offsetY = worldCenter.y;
-    
-    console.log(`🎯 MuscleHighlight - Adjusting positions:`, {
-      worldModelCenter: worldCenter.y.toFixed(2),
-      worldTorsoCenter: 0,
-      offsetY: offsetY.toFixed(2),
-      note: "Highlight positions will be adjusted by this offset"
-    });
-  }
+  // Calculate offset in useEffect to avoid accessing refs during render
+  useEffect(() => {
+    if (modelRef?.current) {
+      const box = new THREE.Box3().setFromObject(modelRef.current);
+      const worldCenter = box.getCenter(new THREE.Vector3());
+      // Offset là khoảng cách từ model center (toàn bộ) đến torso center (0, 0, 0)
+      const newOffsetY = worldCenter.y;
+      setOffsetY(newOffsetY);
+      
+      console.log(`🎯 MuscleHighlight - Adjusting positions:`, {
+        worldModelCenter: worldCenter.y.toFixed(2),
+        worldTorsoCenter: 0,
+        offsetY: newOffsetY.toFixed(2),
+        note: "Highlight positions will be adjusted by this offset"
+      });
+    }
+  }, [modelRef]);
 
-  muscleGroups.forEach((mg) => {
+  const highlights = muscleGroups.map((mg) => {
     const color = getMuscleColor(mg);
     const basePosition = getMusclePosition(mg);
     const scale = getMuscleScale(mg);
@@ -880,7 +877,7 @@ function MuscleHighlight({ muscleGroups, modelRef }) {
     // Nhưng model đã được center tại torso (y=0), nên cần trừ offset
     const adjustedY = basePosition.y - offsetY;
 
-    highlights.push(
+    return (
       <mesh key={mg} position={[basePosition.x, adjustedY, basePosition.z]}>
         <boxGeometry args={[scale.x, scale.y, scale.z]} />
         <meshStandardMaterial
@@ -914,7 +911,6 @@ export default function ExerciseViewer3D({
   const [speed, setSpeed] = useState(1.0);
   const [animationController, setAnimationController] = useState(null);
   const [currentStep, setCurrentStep] = useState(0);
-  const [animationProgress, setAnimationProgress] = useState(0);
   const [showMuscleHighlight, setShowMuscleHighlight] = useState(false);
   const modelRef = useRef(null);
   const muscleGroups = exerciseSlug 
@@ -961,13 +957,17 @@ export default function ExerciseViewer3D({
         // Fallback: directly play the action
         console.log(`▶️ Directly playing currentAction`);
         const action = animationController.currentAction;
-        action.enabled = true;
+        // Create a new action state object instead of modifying directly
+        const newAction = {
+          ...action,
+          enabled: true,
+          paused: false
+        };
         action.setEffectiveWeight(1.0);
-        action.paused = false;
         if (!action.isRunning()) {
           action.play();
         }
-        console.log(`🔧 Action state after direct play: paused=${action.paused}, enabled=${action.enabled}, isRunning=${action.isRunning()}`);
+        console.log(`🔧 Action state after direct play: paused=${newAction.paused}, enabled=${newAction.enabled}, isRunning=${action.isRunning()}`);
       } else {
         console.warn(`⚠️ Animation controller doesn't have play/resume method`);
       }

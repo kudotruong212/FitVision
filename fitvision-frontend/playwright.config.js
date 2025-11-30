@@ -1,4 +1,5 @@
 // playwright.config.js
+/* eslint-env node */
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({

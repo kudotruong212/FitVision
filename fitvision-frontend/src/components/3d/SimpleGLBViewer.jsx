@@ -20,8 +20,9 @@ function Model({ url, autoPlay = true }) {
   });
   
   // Đảm bảo model visible và ẩn TẤT CẢ helper objects và platform objects - KHÔNG ẩn bones
-  scene.visible = true;
-  scene.traverse((child) => {
+  useEffect(() => {
+    scene.visible = true;
+    scene.traverse((child) => {
     // Ẩn tất cả lines và line segments
     if (child.type === 'Line' || child.type === 'LineSegments') {
       child.visible = false;
@@ -112,22 +113,23 @@ function Model({ url, autoPlay = true }) {
       child.visible = true;
       console.log("  - Child:", child.name, child.type, "visible:", child.visible);
     }
-  });
-  
-  // Auto-scale và center
-  const box = new THREE.Box3().setFromObject(scene);
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z);
-  
-  if (maxDim > 0) {
-    // Scale về kích thước hợp lý (2 units)
-    const scale = 2 / maxDim;
-    scene.scale.set(scale, scale, scale);
-    // Center về origin
-    scene.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
-    console.log("📐 Scaled and centered:", { scale, size, center });
-  }
+    });
+    
+    // Auto-scale và center
+    const box = new THREE.Box3().setFromObject(scene);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    
+    if (maxDim > 0) {
+      // Scale về kích thước hợp lý (2 units)
+      const scale = 2 / maxDim;
+      scene.scale.set(scale, scale, scale);
+      // Center về origin
+      scene.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
+      console.log("📐 Scaled and centered:", { scale, size, center });
+    }
+  }, [scene]);
   
   // Setup animation
   useEffect(() => {

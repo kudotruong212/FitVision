@@ -3,19 +3,14 @@
 
 import React, { useRef, useState, useEffect, Suspense } from "react";
 import * as THREE from "three";
-import BaseViewer3D, { useAnimationLoop, useRaycaster } from "./BaseViewer3D.jsx";
+import BaseViewer3D from "./BaseViewer3D.jsx";
 import { createPrimitiveBody, loadModelWithFallback } from "../../utils/3d/modelLoader.js";
-import { getHumanBodyModelUrl } from "../../config/3dModels.js";
 import { 
   normalizeMuscleNames, 
   getMuscleColor, 
   getMusclePosition, 
   getMuscleScale 
 } from "../../utils/3d/muscleMapping.js";
-import { 
-  highlightMuscleGroups, 
-  setupClickDetection 
-} from "../../utils/3d/highlightSystem.js";
 import { MUSCLE_GROUPS, EXERCISE_TO_MUSCLES } from "../../data/muscleData.js";
 
 /**
@@ -87,12 +82,10 @@ function getMuscleIntensity(muscleGroup, plan) {
 function PlanBodyModel({ 
   modelUrl, 
   plan,
-  selectedMuscleGroup,
-  onMuscleClick 
+  selectedMuscleGroup
 }) {
   const groupRef = useRef();
   const [model, setModel] = useState(null);
-  const [muscleMeshes, setMuscleMeshes] = useState([]);
   const highlightsRef = useRef([]);
 
   // Load model
@@ -192,7 +185,7 @@ function PlanBodyModel({
     });
 
     highlightsRef.current = newHighlights;
-    setMuscleMeshes(newMeshes);
+    // Highlights stored in ref, no state update needed
 
     return () => {
       newHighlights.forEach(({ outline }) => {
@@ -225,10 +218,8 @@ export default function WorkoutPlanViewer3D({
   height = "80",
   selectedMuscleGroup = null,
   onMuscleClick,
-  onMuscleHover,
   className = "",
 }) {
-  const [hoveredMuscle, setHoveredMuscle] = useState(null);
 
   if (!plan) {
     return (

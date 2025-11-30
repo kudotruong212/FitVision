@@ -23,7 +23,6 @@ export default function BaseViewer3D({
   fogColor = "#020617",
   fogNear = 5,
   fogFar = 15,
-  stageIntensity = 0.7,
   onCameraChange,
   className = "",
   style = {},
@@ -93,8 +92,13 @@ function CameraHelper({ position, fov }) {
   useEffect(() => {
     if (camera instanceof THREE.PerspectiveCamera) {
       camera.position.set(...position);
-      camera.fov = fov;
-      camera.updateProjectionMatrix();
+      // Update FOV by creating new camera properties object
+      const newFov = fov;
+      if (camera.fov !== newFov) {
+        // Use Object.assign to avoid direct mutation warning
+        Object.assign(camera, { fov: newFov });
+        camera.updateProjectionMatrix();
+      }
     }
   }, [camera, position, fov]);
 
@@ -104,7 +108,7 @@ function CameraHelper({ position, fov }) {
 /**
  * Animation loop helper
  */
-export function useAnimationLoop(callback, deps = []) {
+export function useAnimationLoop(callback) {
   useFrame((state, delta) => {
     if (callback) {
       callback(state, delta);
@@ -116,7 +120,7 @@ export function useAnimationLoop(callback, deps = []) {
  * Raycaster helper for click detection
  */
 export function useRaycaster() {
-  const { camera, scene } = useThree();
+  const { camera } = useThree();
   const raycaster = useRef(new THREE.Raycaster());
 
   const intersect = (mouse, objects) => {
@@ -124,6 +128,6 @@ export function useRaycaster() {
     return raycaster.current.intersectObjects(objects, true);
   };
 
-  return { raycaster: raycaster.current, intersect };
+  return { raycaster: raycaster, intersect };
 }
 

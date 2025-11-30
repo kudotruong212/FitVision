@@ -80,7 +80,7 @@ export function normalizeMuscleNames(muscleNames) {
 /**
  * Get highlight intensity based on score or priority
  */
-export function getHighlightIntensity(score, maxScore = 100) {
+export function getHighlightIntensity(score) {
   if (score >= 80) return 1.0; // Full highlight for good scores
   if (score >= 60) return 0.7;
   if (score >= 40) return 0.5;

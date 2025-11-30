@@ -242,7 +242,7 @@ export class AnimationController {
  */
 export function createKeyframeAnimation(object, keyframes, duration = null) {
   // Auto-calculate duration: more keyframes = longer duration for smooth motion
-  const calculatedDuration = duration || Math.max(2, keyframes.length * 0.4);
+  const finalDuration = duration || Math.max(2, keyframes.length * 0.4);
   const times = [];
   const positions = [];
   const rotationsX = [];
@@ -250,7 +250,7 @@ export function createKeyframeAnimation(object, keyframes, duration = null) {
   const rotationsZ = [];
 
   keyframes.forEach((frame, index) => {
-    const time = (index / (keyframes.length - 1)) * duration;
+    const time = (index / (keyframes.length - 1)) * finalDuration;
     times.push(time);
     positions.push(frame.position.x, frame.position.y, frame.position.z);
     rotationsX.push(frame.rotation.x || 0);
@@ -281,7 +281,7 @@ export function createKeyframeAnimation(object, keyframes, duration = null) {
     rotationsZ
   );
 
-  const clip = new THREE.AnimationClip("primitiveAnimation", duration, [
+  const clip = new THREE.AnimationClip("primitiveAnimation", finalDuration, [
     positionTrack,
     rotationXTrack,
     rotationYTrack,
