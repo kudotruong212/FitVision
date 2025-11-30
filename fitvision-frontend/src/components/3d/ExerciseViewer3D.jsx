@@ -214,7 +214,9 @@ const GLTFModelLoader = React.forwardRef(function GLTFModelLoader({
       
       // Đánh dấu đã center để tránh tính lại
       // Use ref to track centered state instead of modifying gltfData
+      // Note: We need to modify userData for tracking, this is acceptable for Three.js objects
       if (!gltfData.scene.userData) {
+        // eslint-disable-next-line react-hooks/immutability
         gltfData.scene.userData = {};
       }
       // eslint-disable-next-line react-hooks/immutability

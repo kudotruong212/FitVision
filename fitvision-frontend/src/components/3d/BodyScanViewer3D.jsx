@@ -156,7 +156,7 @@ function BodyModel({
         }
       });
     };
-  }, [model, weakMuscles, fatAreas]);
+  }, [model, weakMuscles, fatAreas, score]);
 
   // Pulse animation loop
   useAnimationLoop((state, delta) => {
@@ -206,8 +206,6 @@ export default function BodyScanViewer3D({
   onMuscleClick,
   className = "",
 }) {
-  const [selectedMuscle, setSelectedMuscle] = useState(null);
-
   if (!scanData) {
     return (
       <div className={`w-full bg-slate-900 rounded-xl border border-slate-700 p-6 ${className}`}>
@@ -230,7 +228,6 @@ export default function BodyScanViewer3D({
   const finalModelUrl = modelUrl || getHumanBodyModelUrl();
 
   const handleMuscleClick = (muscleGroup, object) => {
-    setSelectedMuscle(muscleGroup);
     if (onMuscleClick) {
       onMuscleClick(muscleGroup, object);
     }
