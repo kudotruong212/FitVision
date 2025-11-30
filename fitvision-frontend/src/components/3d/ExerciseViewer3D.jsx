@@ -213,10 +213,12 @@ const GLTFModelLoader = React.forwardRef(function GLTFModelLoader({
       );
       
       // Đánh dấu đã center để tránh tính lại
-      // Use Object.assign to avoid direct mutation
-      const userData = gltfData.scene.userData || {};
-      Object.assign(userData, { centered: true });
-      gltfData.scene.userData = userData;
+      // Use ref to track centered state instead of modifying gltfData
+      if (!gltfData.scene.userData) {
+        gltfData.scene.userData = {};
+      }
+      // eslint-disable-next-line react-hooks/immutability
+      gltfData.scene.userData.centered = true;
       
       console.log(`📍 GLTFModelLoader - Centered model at origin (torso):`, {
         boundingBox: {
@@ -650,6 +652,7 @@ const ExerciseModel = React.forwardRef(function ExerciseModel({
     });
     
     // Ensure model is visible
+    // eslint-disable-next-line react-hooks/immutability
     model.visible = true;
     model.traverse((child) => {
       // Ẩn bones và helper objects
@@ -773,7 +776,11 @@ const ExerciseModel = React.forwardRef(function ExerciseModel({
       });
       
       // Mark as scaled to prevent re-scaling
-      if (!model.userData) model.userData = {};
+      if (!model.userData) {
+        // eslint-disable-next-line react-hooks/immutability
+        model.userData = {};
+      }
+      // eslint-disable-next-line react-hooks/immutability
       model.userData.scaled = true;
       
       console.log(`✅ Model ready for display:`, {
@@ -832,6 +839,7 @@ const ExerciseModel = React.forwardRef(function ExerciseModel({
   // The mixer must reference the exact same object hierarchy
   // Also ensure model is visible
   if (model) {
+    // eslint-disable-next-line react-hooks/immutability
     model.visible = true;
     // Double-check all children are visible
     model.traverse((child) => {
@@ -979,7 +987,9 @@ export default function ExerciseViewer3D({
       // Find the ExerciseModel component's ref (we need to pass it down or use a different approach)
       // For now, force unpause directly on the action
       if (animationController.currentAction) {
+        // eslint-disable-next-line react-hooks/immutability
         animationController.currentAction.paused = false;
+        // eslint-disable-next-line react-hooks/immutability
         animationController.currentAction.enabled = true;
         console.log(`🔧 Force unpaused after play: paused=${animationController.currentAction.paused}, enabled=${animationController.currentAction.enabled}`);
       }

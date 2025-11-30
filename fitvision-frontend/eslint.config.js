@@ -26,4 +26,16 @@ export default defineConfig([
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
     },
   },
+  {
+    files: ['playwright.config.js', 'vite.config.js', 'vitest.setup.js', '**/*.config.js'],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.node },
+    },
+  },
+  {
+    files: ['src/components/ErrorBoundary.jsx'],
+    languageOptions: {
+      globals: { ...globals.browser, process: 'readonly' },
+    },
+  },
 ])

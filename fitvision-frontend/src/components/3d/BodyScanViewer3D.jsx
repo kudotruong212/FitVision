@@ -24,7 +24,8 @@ import { getHumanBodyModelUrl } from "../../config/3dModels.js";
 function BodyModel({ 
   modelUrl, 
   weakMuscles = [], 
-  fatAreas = []
+  fatAreas = [],
+  score = 0
 }) {
   const groupRef = useRef();
   const [model, setModel] = useState(null);
@@ -155,7 +156,7 @@ function BodyModel({
         }
       });
     };
-  }, [model, weakMuscles, fatAreas, score]);
+  }, [model, weakMuscles, fatAreas]);
 
   // Pulse animation loop
   useAnimationLoop((state, delta) => {
@@ -205,6 +206,7 @@ export default function BodyScanViewer3D({
   onMuscleClick,
   className = "",
 }) {
+  const [selectedMuscle, setSelectedMuscle] = useState(null);
 
   if (!scanData) {
     return (

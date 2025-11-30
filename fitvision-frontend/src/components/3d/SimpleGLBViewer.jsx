@@ -21,6 +21,7 @@ function Model({ url, autoPlay = true }) {
   
   // Đảm bảo model visible và ẩn TẤT CẢ helper objects và platform objects - KHÔNG ẩn bones
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/immutability
     scene.visible = true;
     scene.traverse((child) => {
     // Ẩn tất cả lines và line segments

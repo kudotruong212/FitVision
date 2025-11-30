@@ -1,7 +1,7 @@
 // src/hooks/useScan.js
 // Scan-specific hooks
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   fetchScanQuota,
   fetchScanHistory,
@@ -55,7 +55,7 @@ export function useScanHistory(limit = 20) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const refetch = async () => {
+  const refetch = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -68,7 +68,7 @@ export function useScanHistory(limit = 20) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [limit]);
 
   useEffect(() => {
     refetch();

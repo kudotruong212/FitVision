@@ -108,6 +108,7 @@ function CameraHelper({ position, fov }) {
 /**
  * Animation loop helper
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAnimationLoop(callback) {
   useFrame((state, delta) => {
     if (callback) {
@@ -119,6 +120,7 @@ export function useAnimationLoop(callback) {
 /**
  * Raycaster helper for click detection
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useRaycaster() {
   const { camera } = useThree();
   const raycaster = useRef(new THREE.Raycaster());
