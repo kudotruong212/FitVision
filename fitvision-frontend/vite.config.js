@@ -13,6 +13,16 @@ export default defineConfig({
       "react-hot-toast": resolve(__dirname, "node_modules/react-hot-toast"),
     },
   },
+  assetsInclude: ["**/*.glb", "**/*.gltf"],
+  optimizeDeps: {
+    include: ["three", "@react-three/fiber", "@react-three/drei"],
+  },
+  publicDir: "public",
+  server: {
+    fs: {
+      allow: [".."],
+    },
+  },
   test: {
     environment: "jsdom",
     setupFiles: "./vitest.setup.js",

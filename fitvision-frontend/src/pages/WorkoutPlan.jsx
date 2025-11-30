@@ -3,6 +3,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { fetchScanHistory } from "../api/services/scanService.js";
 import { getStorageJSON } from "../api/utils/storage.js";
+import WorkoutPlanViewer3D from "../components/3d/WorkoutPlanViewer3D.jsx";
 
 export default function WorkoutPlan() {
   const [history, setHistory] = React.useState([]);
@@ -94,6 +95,22 @@ export default function WorkoutPlan() {
 
       {error && <p className="text-red-400 text-sm">{error}</p>}
       {loading && <p className="text-gray-400 text-sm">Đang tải...</p>}
+
+      {/* 3D Visualization */}
+      {selectedPlan && (
+        <WorkoutPlanViewer3D
+          plan={selectedPlan}
+          height="80"
+          selectedMuscleGroup={focusFilter !== "all" ? focusFilter : null}
+          onMuscleClick={(muscleGroup) => {
+            // Filter exercises by muscle group
+            const normalized = muscleGroup.toLowerCase();
+            if (focusOptions.includes(normalized)) {
+              setFocusFilter(normalized);
+            }
+          }}
+        />
+      )}
 
       <div className="grid lg:grid-cols-[280px,1fr] gap-6">
         <aside className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 space-y-4">
