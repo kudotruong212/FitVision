@@ -12,6 +12,7 @@ export const API_ENDPOINTS = {
     RESET_PASSWORD: "/api/auth/reset-password",
     VERIFY_EMAIL: "/api/auth/verify-email",
     RESEND_VERIFICATION: "/api/auth/resend-verification",
+    ME: "/api/auth/me",
   },
   
   SCAN: {

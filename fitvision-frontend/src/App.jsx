@@ -30,6 +30,7 @@ export default function App() {
           <Routes>
           <Route path={ROUTES.HOME} element={<Home />} />
           <Route path={ROUTES.AUTH} element={<Auth />} />
+          <Route path="/verify-email" element={<Auth />} />
           <Route
             path={ROUTES.DASHBOARD}
             element={

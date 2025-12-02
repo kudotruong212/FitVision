@@ -1,8 +1,10 @@
 // src/pages/Auth.jsx
 import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { loginUser, registerUser, requestPasswordReset, resetPassword, verifyEmail } from "../api/services/authService.js";
+import { loginUser, registerUser, requestPasswordReset, resetPassword, verifyEmail, getCurrentUser } from "../api/services/authService.js";
 import { useAuth } from "../context/AuthContext.jsx";
+import { setStorageItem } from "../api/utils/storage.js";
+import { STORAGE_KEYS } from "../constants/storageKeys.js";
 
 export default function AuthPage() {
     const [mode, setMode] = React.useState("login"); // "login" | "register" | "forgot-password" | "reset-password"
@@ -40,17 +42,48 @@ export default function AuthPage() {
     // Check for email verification token in URL
     React.useEffect(() => {
         const params = new URLSearchParams(location.search);
-        const verifyToken = params.get("verify");
-        if (verifyToken && isAuthenticated) {
-            // Handle email verification
+        const verifyToken = params.get("token");
+        if (verifyToken) {
+            setLoading(true);
+            // Handle email verification - can verify even if not logged in
             verifyEmail(verifyToken)
-                .then(() => {
-                    setSuccess("Email đã được xác nhận thành công!");
-                    // Refresh user data
-                    setUser((prev) => (prev ? { ...prev, email_verified: true } : prev));
+                .then(async () => {
+                    setSuccess("Email đã được xác nhận thành công! Bạn có thể đăng nhập ngay.");
+                    // Refresh user data if logged in
+                    if (isAuthenticated) {
+                        try {
+                            // Fetch fresh user data from backend (includes email_verified)
+                            const userData = await getCurrentUser();
+                            // Update user state with fresh data from backend
+                            setUser(userData);
+                            // Also update localStorage
+                            setStorageItem(STORAGE_KEYS.USER, userData);
+                        } catch (refreshErr) {
+                            console.error("Failed to refresh user data:", refreshErr);
+                            // Fallback: just update local state
+                            setUser((prev) => (prev ? { ...prev, email_verified: true } : prev));
+                            // Update localStorage too
+                            try {
+                                const currentUser = JSON.parse(localStorage.getItem(STORAGE_KEYS.USER) || '{}');
+                                if (currentUser.id || currentUser._id) {
+                                    currentUser.email_verified = true;
+                                    setStorageItem(STORAGE_KEYS.USER, currentUser);
+                                }
+                            } catch (e) {
+                                console.error("Failed to update localStorage:", e);
+                            }
+                        }
+                    }
+                    // Clear token from URL
+                    window.history.replaceState({}, document.title, location.pathname);
+                    // Switch to login mode
+                    setMode("login");
                 })
                 .catch((err) => {
-                    setError(err.response?.data?.error || "Không xác nhận được email.");
+                    setError(err.response?.data?.error || "Không xác nhận được email. Token có thể đã hết hạn.");
+                })
+                .finally(() => {
+                    setLoading(false);
                 });
         }
     }, [location.search, isAuthenticated, setUser]);

@@ -6,6 +6,7 @@ import rateLimit from "express-rate-limit";
 import { User } from "../models/User.js";
 import { serializeProfile } from "./profile.js";
 import { validate } from "../middleware/validate.js";
+import { authRequired } from "../middleware/auth.js";
 import {
   registerSchema,
   loginSchema,
@@ -70,9 +71,8 @@ async function enqueueEmailVerification(user) {
             { expiresIn: "1d" }
         );
         // Try to use queue if available, otherwise send directly
-        const queue = await getEmailQueue();
-        if (queue) {
-            await queue.add('send-verification', { user, token });
+        if (emailQueue) {
+            await emailQueue.add('send-verification', { user, token });
         } else {
             await sendVerificationEmail(user, token);
         }
@@ -127,32 +127,22 @@ router.post("/register", authLimiter, validate(registerSchema), async (req, res)
             process.env.JWT_SECRET,
             { expiresIn: "1d" }
         );
-        getEmailQueue().then(queue => {
-            if (queue) {
-                queue.add('send-verification', { user, token: verifyToken }).catch(err => {
-                    logger.error("Failed to queue verification email", { error: err.message });
-                });
-                queue.add('send-welcome', { user }).catch(err => {
-                    logger.error("Failed to queue welcome email", { error: err.message });
-                });
-            } else {
-                // Fallback to direct sending
-                sendVerificationEmail(user, verifyToken).catch(err => {
-                    logger.error("Failed to send verification email", { error: err.message });
-                });
-                sendWelcomeEmail(user).catch(err => {
-                    logger.error("Failed to send welcome email", { error: err.message });
-                });
-            }
-        }).catch(() => {
-            // Fallback if queue import fails
+        if (emailQueue) {
+            emailQueue.add('send-verification', { user, token: verifyToken }).catch(err => {
+                logger.error("Failed to queue verification email", { error: err.message });
+            });
+            emailQueue.add('send-welcome', { user }).catch(err => {
+                logger.error("Failed to queue welcome email", { error: err.message });
+            });
+        } else {
+            // Fallback to direct sending
             sendVerificationEmail(user, verifyToken).catch(err => {
                 logger.error("Failed to send verification email", { error: err.message });
             });
             sendWelcomeEmail(user).catch(err => {
                 logger.error("Failed to send welcome email", { error: err.message });
             });
-        });
+        }
 
         const rememberMe = req.body.rememberMe === true;
         const token = signToken(user, rememberMe);
@@ -364,6 +354,25 @@ router.post("/resend-verification", authLimiter, validate(resendVerificationSche
     } catch (err) {
         logger.error("Resend verification error", { error: err.message, stack: err.stack });
         res.status(500).json({ error: "Cannot resend verification" });
+    }
+});
+
+/**
+ * GET /api/auth/me
+ * Get current authenticated user info
+ * Requires authentication via authRequired middleware
+ */
+router.get("/me", authRequired, async (req, res) => {
+    try {
+        // Refresh user from database to get latest email_verified status
+        const user = await User.findById(req.user._id);
+        if (!user) {
+            return res.status(404).json({ error: "Người dùng không tồn tại." });
+        }
+        res.json(buildUserResponse(user));
+    } catch (err) {
+        logger.error("Get user info error", { error: err.message, stack: err.stack });
+        res.status(500).json({ error: "Cannot get user info" });
     }
 });
 
