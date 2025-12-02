@@ -35,8 +35,16 @@ function getMuscleGroupsFromPlan(plan) {
       if (session.exercises && Array.isArray(session.exercises)) {
         session.exercises.forEach((ex) => {
           if (ex.slug) {
-            const muscles = EXERCISE_TO_MUSCLES[ex.slug] || [];
-            muscles.forEach((mg) => muscleGroups.add(mg));
+            const muscles = EXERCISE_TO_MUSCLES[ex.slug];
+            if (muscles) {
+              // Handle both old array format and new object format
+              if (Array.isArray(muscles)) {
+                muscles.forEach((mg) => muscleGroups.add(mg));
+              } else {
+                // New object format - get keys
+                Object.keys(muscles).forEach((mg) => muscleGroups.add(mg));
+              }
+            }
           }
           if (ex.muscle_group) {
             const normalized = normalizeMuscleNames([ex.muscle_group]);
@@ -63,9 +71,21 @@ function getMuscleIntensity(muscleGroup, plan) {
     if (session.exercises && Array.isArray(session.exercises)) {
       session.exercises.forEach((ex) => {
         totalCount++;
-        const muscles = ex.slug 
-          ? (EXERCISE_TO_MUSCLES[ex.slug] || [])
-          : (ex.muscle_group ? normalizeMuscleNames([ex.muscle_group]) : []);
+        let muscles = [];
+        if (ex.slug) {
+          const mapping = EXERCISE_TO_MUSCLES[ex.slug];
+          if (mapping) {
+            // Handle both old array format and new object format
+            if (Array.isArray(mapping)) {
+              muscles = mapping;
+            } else {
+              // New object format - get keys
+              muscles = Object.keys(mapping);
+            }
+          }
+        } else if (ex.muscle_group) {
+          muscles = normalizeMuscleNames([ex.muscle_group]);
+        }
         if (muscles.includes(muscleGroup)) {
           muscleCount++;
         }
