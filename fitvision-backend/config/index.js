@@ -68,6 +68,22 @@ export const config = {
   logging: {
     level: process.env.LOG_LEVEL || 'info',
   },
+
+  /**
+   * Redis configuration
+   *
+   * Lưu ý:
+   * - Trong môi trường test, ta **không** nên tự động bật Redis
+   *   để tránh tạo kết nối/background handles làm Jest không thoát được.
+   * - Nếu thật sự cần Redis trong test, có thể set REDIS_URL thủ công.
+   */
+  redis: {
+    // Chỉ dùng default URL khi KHÔNG phải test
+    url:
+      process.env.NODE_ENV === 'test'
+        ? process.env.REDIS_URL || ''
+        : process.env.REDIS_URL || 'redis://localhost:6379',
+  },
 };
 
 export default config;
