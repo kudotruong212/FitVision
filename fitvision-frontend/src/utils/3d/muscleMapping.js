@@ -1,7 +1,7 @@
 // src/utils/3d/muscleMapping.js
 // Muscle group mapping utilities for 3D visualization
 
-import { MUSCLE_GROUPS, EXERCISE_TO_MUSCLES } from "../../data/muscleData.js";
+import { MUSCLE_GROUPS, EXERCISE_TO_MUSCLES, getMuscleIntensityForExercise } from "../../data/muscleData.js";
 
 /**
  * Get color for a muscle group
@@ -29,10 +29,63 @@ export function getMuscleScale(muscleGroup) {
 }
 
 /**
+ * Get shape type for a muscle group
+ */
+export function getMuscleShape(muscleGroup) {
+  const group = MUSCLE_GROUPS[muscleGroup];
+  if (!group) return MUSCLE_GROUPS.default.shape || "box";
+  return group.shape || "box";
+}
+
+export function getMuscleHeightRange(muscleGroup) {
+  const group = MUSCLE_GROUPS[muscleGroup];
+  if (!group) return MUSCLE_GROUPS.default.heightRange || { from: 0, to: 1 };
+  return group.heightRange || MUSCLE_GROUPS.default.heightRange || { from: 0, to: 1 };
+}
+
+export function getMuscleOffset(muscleGroup) {
+  const group = MUSCLE_GROUPS[muscleGroup];
+  if (!group) return MUSCLE_GROUPS.default.offset || { x: 0, z: 0 };
+  return group.offset || MUSCLE_GROUPS.default.offset || { x: 0, z: 0 };
+}
+
+/**
+ * Get bone names for a muscle group (for skinned mesh integration)
+ */
+export function getMuscleBoneNames(muscleGroup) {
+  const group = MUSCLE_GROUPS[muscleGroup];
+  if (!group) return MUSCLE_GROUPS.default.boneNames || [];
+  return group.boneNames || [];
+}
+
+/**
+ * Get priority for a muscle group
+ */
+export function getMusclePriority(muscleGroup) {
+  const group = MUSCLE_GROUPS[muscleGroup];
+  if (!group) return MUSCLE_GROUPS.default.priority || 0.5;
+  return group.priority || 0.5;
+}
+
+/**
  * Get muscle groups for an exercise
  */
 export function getMuscleGroupsForExercise(exerciseSlug) {
-  return EXERCISE_TO_MUSCLES[exerciseSlug] || ["default"];
+  const mapping = EXERCISE_TO_MUSCLES[exerciseSlug];
+  if (!mapping) return ["default"];
+  
+  // If it's the old array format, return as is
+  if (Array.isArray(mapping)) return mapping;
+  
+  // If it's the new object format, return keys sorted by intensity
+  return Object.keys(mapping).sort((a, b) => mapping[b] - mapping[a]);
+}
+
+/**
+ * Get muscle intensity for an exercise
+ */
+export function getMuscleIntensity(exerciseSlug, muscleGroup) {
+  return getMuscleIntensityForExercise(exerciseSlug, muscleGroup);
 }
 
 /**

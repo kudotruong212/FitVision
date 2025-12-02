@@ -4,19 +4,39 @@
 import io
 from typing import Optional, Dict, List
 
+import sys
+
 try:
     import numpy as np
     from PIL import Image
     import mediapipe as mp
     POSE_AVAILABLE = True
     mp_pose = mp.solutions.pose if mp else None
+except ImportError as e:
+    np = None
+    Image = None
+    mp = None
+    POSE_AVAILABLE = False
+    mp_pose = None
+    # Only show warning if it's not a known compatibility issue
+    error_msg = str(e)
+    if 'mediapipe' in error_msg.lower():
+        # MediaPipe may not support Python 3.13+ yet - this is expected
+        python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+        if sys.version_info.major == 3 and sys.version_info.minor >= 13:
+            # Suppress warning for Python 3.13+ as MediaPipe doesn't support it yet
+            pass
+        else:
+            print(f"⚠️  Pose estimation unavailable: MediaPipe not installed (optional feature)")
+    elif 'numpy' in error_msg.lower() or 'PIL' in error_msg.lower() or 'Pillow' in error_msg.lower():
+        print(f"⚠️  Pose estimation dependencies not available: {e}")
 except Exception as e:
     np = None
     Image = None
     mp = None
     POSE_AVAILABLE = False
     mp_pose = None
-    print(f"Pose estimation dependencies not available: {e}")
+    print(f"⚠️  Pose estimation initialization error: {e}")
 
 
 def run_pose_estimation(image_bytes: bytes) -> Optional[Dict]:

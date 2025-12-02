@@ -8,8 +8,16 @@ import { useThree } from "@react-three/fiber";
 import BaseViewer3D, { useAnimationLoop } from "./BaseViewer3D.jsx";
 import { AnimationController } from "../../utils/3d/animationController.js";
 import { createPrimitiveBody, loadModelWithFallback } from "../../utils/3d/modelLoader.js";
-import { getMuscleColor, getMusclePosition, getMuscleScale } from "../../utils/3d/muscleMapping.js";
-import { getMuscleGroupsForExercise } from "../../data/muscleData.js";
+import { 
+  getMuscleColor, 
+  getMuscleShape,
+  getMusclePriority,
+  getMuscleIntensity,
+  getMuscleHeightRange,
+  getMuscleOffset
+} from "../../utils/3d/muscleMapping.js";
+import { getMuscleGroupsForExercise, MUSCLE_GROUPS } from "../../data/muscleData.js";
+import { animateHighlightPulse } from "../../utils/3d/highlightSystem.js";
 import { getExerciseModelUrl } from "../../config/3dModels.js";
 
 /**
@@ -212,15 +220,26 @@ const GLTFModelLoader = React.forwardRef(function GLTFModelLoader({
         -torsoCenter.z
       );
       
-      // Đánh dấu đã center để tránh tính lại
-      // Use ref to track centered state instead of modifying gltfData
-      // Note: We need to modify userData for tracking, this is acceptable for Three.js objects
+      // Đánh dấu đã center và lưu thông tin vị trí ban đầu để highlight có thể quy đổi toạ độ
       if (!gltfData.scene.userData) {
         // eslint-disable-next-line react-hooks/immutability
         gltfData.scene.userData = {};
       }
+      const appliedScale = gltfData.scene.scale?.x || 1;
       // eslint-disable-next-line react-hooks/immutability
       gltfData.scene.userData.centered = true;
+      // eslint-disable-next-line react-hooks/immutability
+      gltfData.scene.userData.centerInfo = {
+        translation: torsoCenter.clone(),
+        torsoCenter: torsoCenter.clone(),
+        boundingBox: {
+          min: finalBox.min.clone(),
+          max: finalBox.max.clone(),
+          size: finalSize.clone(),
+        },
+        originalCenter: finalCenter.clone(),
+        appliedScale,
+      };
       
       console.log(`📍 GLTFModelLoader - Centered model at origin (torso):`, {
         boundingBox: {
@@ -321,8 +340,8 @@ const GLTFModelLoader = React.forwardRef(function GLTFModelLoader({
             action.play();
           }
         }
+        mixerRef.current.update(delta);
       }
-      mixerRef.current.update(delta);
     }
   }, [isPlayingRef]);
   
@@ -562,43 +581,45 @@ const ExerciseModel = React.forwardRef(function ExerciseModel({
     };
   }, [modelUrl, exerciseSlug, muscleGroup, onAnimationReady]);
 
-  // Animation loop - update mixer every frame
-  // This MUST run every frame to update animations
-  // Use ref for isPlaying to avoid closure issues
+  // Animation loop - chỉ update khi đang playing
   useAnimationLoop((state, delta) => {
-    // Always update mixer if it exists (for GLTF animations)
-    // This is critical - mixer.update() advances the animation
     if (mixerRef.current) {
-      // CRITICAL: Force unpause action if isPlaying is true
-      // Use ref to get current value (avoids closure issues)
       const playing = isPlayingRef.current;
       if (playing && controllerRef.current?.currentAction) {
         const action = controllerRef.current.currentAction;
-        // Always force unpause when playing
         if (action.paused) {
           action.paused = false;
           action.enabled = true;
-          // Also ensure action is running
           if (!action.isRunning()) {
             action.play();
           }
-          console.log(`🔧 Force unpaused in loop: paused=${action.paused}, enabled=${action.enabled}, isRunning=${action.isRunning()}`);
+          console.log(
+            `🔧 Force unpaused in loop: paused=${action.paused}, enabled=${action.enabled}, isRunning=${action.isRunning()}`
+          );
+        }
+        mixerRef.current.update(delta);
+
+        if (Math.random() < 0.01) {
+          const activeActions = mixerRef.current._actions || [];
+          console.log(
+            `🔄 Mixer update: delta=${delta.toFixed(
+              3
+            )}, mixer.time=${mixerRef.current.time.toFixed(
+              2
+            )}, action.time=${action.time.toFixed(
+              2
+            )}, paused=${action.paused}, enabled=${action.enabled}, weight=${action
+              .getEffectiveWeight()
+              .toFixed(2)}, isRunning=${action.isRunning()}, isPlaying=${playing}, inMixer=${activeActions.includes(
+              action
+            )}`
+          );
         }
       }
-      
-      // Update mixer - this advances all active animations
-      mixerRef.current.update(delta);
-      
-      // Debug: Log mixer update occasionally to verify it's working
-      if (controllerRef.current?.currentAction && Math.random() < 0.01) { // ~1% chance per frame
-        const action = controllerRef.current.currentAction;
-        const activeActions = mixerRef.current._actions || [];
-        console.log(`🔄 Mixer update: delta=${delta.toFixed(3)}, mixer.time=${mixerRef.current.time.toFixed(2)}, action.time=${action.time.toFixed(2)}, paused=${action.paused}, enabled=${action.enabled}, weight=${action.getEffectiveWeight().toFixed(2)}, isRunning=${action.isRunning()}, isPlaying=${playing}, inMixer=${activeActions.includes(action)}`);
-      }
     }
-    // Also update controller if it has its own update method
-    if (controllerRef.current) {
-      if (typeof controllerRef.current.update === 'function') {
+    // Controller.update: chỉ cần nếu playing
+    if (controllerRef.current && typeof controllerRef.current.update === "function") {
+      if (isPlayingRef.current) {
         controllerRef.current.update(delta);
       }
     }
@@ -777,13 +798,26 @@ const ExerciseModel = React.forwardRef(function ExerciseModel({
         note: "Model is centered at TORSO (60% from bottom), not full body center"
       });
       
-      // Mark as scaled to prevent re-scaling
+      // Mark as scaled to prevent re-scaling + lưu info centering để dùng lại
       if (!model.userData) {
         // eslint-disable-next-line react-hooks/immutability
         model.userData = {};
       }
+      const appliedScale = model.scale?.x || 1;
       // eslint-disable-next-line react-hooks/immutability
       model.userData.scaled = true;
+      // eslint-disable-next-line react-hooks/immutability
+      model.userData.centerInfo = {
+        translation: torsoCenter.clone(),
+        torsoCenter: torsoCenter.clone(),
+        boundingBox: {
+          min: finalBox.min.clone(),
+          max: finalBox.max.clone(),
+          size: finalSize.clone(),
+        },
+        originalCenter: finalCenter.clone(),
+        appliedScale,
+      };
       
       console.log(`✅ Model ready for display:`, {
         finalPosition: { x: model.position.x.toFixed(2), y: model.position.y.toFixed(2), z: model.position.z.toFixed(2) },
@@ -854,54 +888,306 @@ const ExerciseModel = React.forwardRef(function ExerciseModel({
   return <primitive ref={groupRef} object={model} />;
 });
 
-/**
- * Muscle highlight component - highlights using separate boxes
- */
-function MuscleHighlight({ muscleGroups, modelRef }) {
-  const [offsetY, setOffsetY] = useState(0);
-  
-  // Calculate offset in useEffect to avoid accessing refs during render
-  useEffect(() => {
-    if (modelRef?.current) {
-      const box = new THREE.Box3().setFromObject(modelRef.current);
-      const worldCenter = box.getCenter(new THREE.Vector3());
-      // Offset là khoảng cách từ model center (toàn bộ) đến torso center (0, 0, 0)
-      const newOffsetY = worldCenter.y;
-      setOffsetY(newOffsetY);
-      
-      console.log(`🎯 MuscleHighlight - Adjusting positions:`, {
-        worldModelCenter: worldCenter.y.toFixed(2),
-        worldTorsoCenter: 0,
-        offsetY: newOffsetY.toFixed(2),
-        note: "Highlight positions will be adjusted by this offset"
-      });
+function createSimpleMuscleHighlight(centerInfo, muscleGroup, color, intensity) {
+  const shape = getMuscleShape(muscleGroup);
+  const heightRange = getMuscleHeightRange(muscleGroup);
+  const offset = getMuscleOffset(muscleGroup);
+
+  const minY = centerInfo?.boundingBox?.min?.y ?? -1;
+  const maxY = centerInfo?.boundingBox?.max?.y ?? 1;
+  const height = maxY - minY || 1;
+  const yCenterRatio = (heightRange.from + heightRange.to) / 2;
+  const yCenter = minY + yCenterRatio * height;
+
+  const width = (centerInfo?.boundingBox?.size?.x ?? 1);
+  const depth = (centerInfo?.boundingBox?.size?.z ?? 1);
+  const x = (offset.x || 0) * (width * 0.5);
+  const z = (offset.z || 0) * (depth * 0.5);
+
+  const center = new THREE.Vector3(x, yCenter, z);
+  const baseScaleY = (heightRange.to - heightRange.from) * height || 0.5;
+  const baseScaleX = width * 0.35;
+  const baseScaleZ = depth * 0.35;
+
+  let geometry;
+  switch (shape) {
+    case "capsule": {
+      const radius = Math.max(0.05, Math.min(baseScaleX, baseScaleZ) * 0.5);
+      const length = Math.max(0, baseScaleY - radius * 2);
+      geometry = new THREE.CapsuleGeometry(radius, length, 8, 16);
+      break;
     }
-  }, [modelRef]);
+    case "box":
+      geometry = new THREE.BoxGeometry(baseScaleX, baseScaleY, baseScaleZ);
+      break;
+    case "sphere":
+    default:
+      geometry = new THREE.SphereGeometry(Math.max(baseScaleX, baseScaleY, baseScaleZ) * 0.5, 16, 16);
+  }
 
-  const highlights = muscleGroups.map((mg) => {
-    const color = getMuscleColor(mg);
-    const basePosition = getMusclePosition(mg);
-    const scale = getMuscleScale(mg);
-    
-    // Điều chỉnh Y position: muscle positions được định nghĩa relative to model center (toàn bộ)
-    // Nhưng model đã được center tại torso (y=0), nên cần trừ offset
-    const adjustedY = basePosition.y - offsetY;
-
-    return (
-      <mesh key={mg} position={[basePosition.x, adjustedY, basePosition.z]}>
-        <boxGeometry args={[scale.x, scale.y, scale.z]} />
-        <meshStandardMaterial
-          color={color}
-          emissive={color}
-          emissiveIntensity={0.3}
-          transparent
-          opacity={0.6}
-        />
-      </mesh>
-    );
+  const material = new THREE.MeshStandardMaterial({
+    color,
+    emissive: new THREE.Color(color),
+    emissiveIntensity: 0.4 * intensity,
+    transparent: true,
+    opacity: 0.6 * intensity,
+    depthWrite: false,
   });
 
-  return <>{highlights}</>;
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.copy(center);
+  mesh.renderOrder = 2;
+
+  const outlineGeometry = geometry.clone();
+  outlineGeometry.scale(1.05, 1.05, 1.05);
+  const outlineMaterial = new THREE.MeshBasicMaterial({
+    color,
+    side: THREE.BackSide,
+    transparent: true,
+    opacity: 0.35 * intensity,
+    depthWrite: false,
+  });
+  const outline = new THREE.Mesh(outlineGeometry, outlineMaterial);
+  outline.position.copy(mesh.position);
+  outline.renderOrder = 1;
+
+  console.log("🎯 MeshHighlight center/scale:", {
+    muscleGroup,
+    center,
+    baseScaleX,
+    baseScaleY,
+    baseScaleZ,
+  });
+
+  return { mesh, outline };
+}
+
+/**
+ * Muscle highlight component - improved with better shapes, visual effects, and animations
+ */
+function MuscleHighlight({ muscleGroups, exerciseSlug, intensity = 1.0, enablePulse = true }) {
+  const highlightsRef = useRef([]);
+  const pulseAnimationsRef = useRef([]);
+  const groupRef = useRef();
+
+  useEffect(() => {
+    if (!groupRef.current) return;
+    const container = groupRef.current;
+
+    highlightsRef.current.forEach(({ mesh, outline }) => {
+      mesh?.parent?.remove(mesh);
+      outline?.parent?.remove(outline);
+      mesh?.geometry?.dispose();
+      mesh?.material?.dispose();
+      outline?.geometry?.dispose();
+      outline?.material?.dispose();
+    });
+    highlightsRef.current = [];
+    pulseAnimationsRef.current = [];
+    while (container.children.length) {
+      const child = container.children.pop();
+      child?.geometry?.dispose?.();
+      child?.material?.dispose?.();
+    }
+
+    const centerInfo = container.parent?.userData?.centerInfo || null;
+
+    muscleGroups.forEach((mg) => {
+      const color = getMuscleColor(mg);
+      const priority = getMusclePriority(mg);
+      const exerciseIntensity = exerciseSlug ? getMuscleIntensity(exerciseSlug, mg) : 1.0;
+      const finalIntensity = exerciseIntensity * intensity * priority;
+
+      const result = createSimpleMuscleHighlight(centerInfo, mg, color, finalIntensity);
+      const highlightMesh = result?.mesh;
+      const highlightOutline = result?.outline;
+
+      if (!highlightMesh) {
+        console.warn(`⚠️ Could not create highlight for ${mg}`);
+        return;
+      }
+
+      highlightMesh.userData.muscleGroup = mg;
+      highlightMesh.userData.intensity = finalIntensity;
+      container.add(highlightMesh);
+      if (highlightOutline) {
+        container.add(highlightOutline);
+      }
+
+      highlightsRef.current.push({ mesh: highlightMesh, outline: highlightOutline, muscleGroup: mg });
+
+      // Chỉ pulse cho nhóm cơ primary (exerciseIntensity ~ 1.0)
+      if (enablePulse && exerciseIntensity >= 0.99) {
+        const pulseFn = animateHighlightPulse(highlightMesh, color, 0.75);
+        pulseAnimationsRef.current.push(pulseFn);
+      }
+    });
+
+    return () => {
+      highlightsRef.current.forEach(({ mesh, outline }) => {
+        mesh?.parent?.remove(mesh);
+        outline?.parent?.remove(outline);
+        mesh?.geometry?.dispose();
+        mesh?.material?.dispose();
+        outline?.geometry?.dispose();
+        outline?.material?.dispose();
+      });
+      highlightsRef.current = [];
+      pulseAnimationsRef.current = [];
+    };
+  }, [muscleGroups, exerciseSlug, intensity, enablePulse]);
+
+  // Pulse animation loop
+  useAnimationLoop((state, delta) => {
+    if (enablePulse) {
+      pulseAnimationsRef.current.forEach((pulseFn) => {
+        pulseFn(delta);
+      });
+    }
+  }, [enablePulse]);
+
+  // Group that actually holds the highlight meshes
+  return <group ref={groupRef} />;
+}
+
+/**
+ * Shader-based highlight: tint trực tiếp lên skinned mesh theo vùng cơ
+ */
+function ModelShaderHighlight({ modelRef, muscleGroups, exerciseSlug, intensity = 1.0 }) {
+  const shaderRef = useRef(null);
+
+  useEffect(() => {
+    if (!modelRef?.current) return;
+
+    let skinnedMesh = null;
+    modelRef.current.traverse((child) => {
+      if (!skinnedMesh && child.isSkinnedMesh) {
+        skinnedMesh = child;
+      }
+    });
+    if (!skinnedMesh || !skinnedMesh.material) return;
+
+    // Clone material once so ta không ảnh hưởng tới model khác
+    if (!skinnedMesh.userData.originalMaterial) {
+      skinnedMesh.userData.originalMaterial = skinnedMesh.material;
+      skinnedMesh.material = skinnedMesh.material.clone();
+    }
+
+    const material = skinnedMesh.material;
+
+    material.onBeforeCompile = (shader) => {
+      console.log("💡 ModelShaderHighlight onBeforeCompile - attaching uniforms");
+      shader.uniforms.muscleCenters = { value: Array(8).fill(new THREE.Vector3()) };
+      shader.uniforms.muscleRadii = { value: new Array(8).fill(0.0) };
+      shader.uniforms.muscleCount = { value: 0 };
+      // Màu highlight rất dễ thấy (xanh neon)
+      shader.uniforms.highlightColor = { value: new THREE.Color("#22c55e") };
+      // Tăng intensity mạnh để dễ quan sát, sau này có thể giảm
+      shader.uniforms.highlightIntensity = { value: intensity * 2.0 };
+
+      shader.vertexShader =
+        `
+        varying vec3 vModelPosition;
+      ` +
+        shader.vertexShader.replace(
+          "void main() {",
+          "void main() {\n  vModelPosition = position;"
+        );
+
+      shader.fragmentShader =
+        `
+        uniform vec3 muscleCenters[8];
+        uniform float muscleRadii[8];
+        uniform int muscleCount;
+        uniform vec3 highlightColor;
+        uniform float highlightIntensity;
+        varying vec3 vModelPosition;
+      ` +
+        shader.fragmentShader.replace(
+          "#include <output_fragment>",
+          `
+          float mask = 0.0;
+          for (int i = 0; i < 8; i++) {
+            if (i >= muscleCount) break;
+            float d = length(vModelPosition - muscleCenters[i]);
+            float r = muscleRadii[i];
+            float k = smoothstep(r, r * 0.6, d);
+            mask = max(mask, 1.0 - k);
+          }
+          float blend = clamp(mask * highlightIntensity, 0.0, 1.0);
+          vec3 hlColor = mix(outgoingLight, highlightColor, blend);
+          gl_FragColor = vec4( hlColor, diffuseColor.a );
+        `
+        );
+
+      shaderRef.current = shader;
+    };
+
+    material.needsUpdate = true;
+
+    return () => {
+      // Restore original material nếu cần trong tương lai
+    };
+  }, [modelRef, intensity]);
+
+  // Cập nhật centers/radii khi muscleGroups thay đổi
+  useEffect(() => {
+    const shader = shaderRef.current;
+    if (!shader || !modelRef?.current) return;
+
+    const centerInfo = modelRef.current.userData?.centerInfo;
+    if (!centerInfo) return;
+
+    const centers = [];
+    const radii = [];
+
+    muscleGroups.slice(0, 8).forEach((mg) => {
+      const heightRange = getMuscleHeightRange(mg);
+      const offset = getMuscleOffset(mg);
+
+      const minY = centerInfo.boundingBox?.min?.y ?? -1;
+      const maxY = centerInfo.boundingBox?.max?.y ?? 1;
+      const h = maxY - minY || 1;
+      const yCenterRatio = (heightRange.from + heightRange.to) / 2;
+      const yCenter = minY + yCenterRatio * h;
+
+      const width = centerInfo.boundingBox?.size?.x ?? 1;
+      const depth = centerInfo.boundingBox?.size?.z ?? 1;
+      const x = (offset.x || 0) * (width * 0.5);
+      const z = (offset.z || 0) * (depth * 0.5);
+
+      centers.push(new THREE.Vector3(x, yCenter, z));
+      const baseScaleX = width * 0.45;
+      const baseScaleY = (heightRange.to - heightRange.from) * h || 0.5;
+      const baseScaleZ = depth * 0.45;
+      radii.push(Math.max(baseScaleX, baseScaleY, baseScaleZ) * 0.6);
+    });
+
+    // Nếu chưa có center nào (debug), tô cả thân để dễ nhìn
+    if (centers.length === 0) {
+      const minY = centerInfo.boundingBox?.min?.y ?? -1;
+      const maxY = centerInfo.boundingBox?.max?.y ?? 1;
+      const h = maxY - minY || 1;
+      centers.push(new THREE.Vector3(0, 0, 0));
+      radii.push(h * 0.8);
+      console.log("💡 Shader debug: no specific muscles, tinting whole body", { minY, maxY, h });
+    }
+
+    for (let i = 0; i < 8; i++) {
+      shader.uniforms.muscleCenters.value[i] = centers[i] || new THREE.Vector3(0, -9999, 0);
+      shader.uniforms.muscleRadii.value[i] = radii[i] || 0.0;
+    }
+    shader.uniforms.muscleCount.value = centers.length;
+    shader.uniforms.highlightIntensity.value = intensity * 2.0;
+    console.log("💡 Shader uniforms updated:", {
+      count: centers.length,
+      centers,
+      radii,
+      intensity: shader.uniforms.highlightIntensity.value,
+    });
+  }, [muscleGroups, exerciseSlug, intensity, modelRef]);
+
+  return null;
 }
 
 /**
@@ -915,13 +1201,16 @@ export default function ExerciseViewer3D({
   showControls = true,
   autoPlay = false,
   stepByStep = false, // New: step-by-step mode
+  autoHighlight = true, // New: auto-enable highlight
   className = "",
 }) {
   const [isPlaying, setIsPlaying] = useState(autoPlay);
   const [speed, setSpeed] = useState(1.0);
   const [animationController, setAnimationController] = useState(null);
   const [currentStep, setCurrentStep] = useState(0);
-  const [showMuscleHighlight, setShowMuscleHighlight] = useState(false);
+  const [showMuscleHighlight, setShowMuscleHighlight] = useState(autoHighlight);
+  const [highlightIntensity, setHighlightIntensity] = useState(1.0);
+  const [enablePulse, setEnablePulse] = useState(true);
   const modelRef = useRef(null);
   const muscleGroups = exerciseSlug 
     ? getMuscleGroupsForExercise(exerciseSlug)
@@ -1009,7 +1298,9 @@ export default function ExerciseViewer3D({
 
   const handleReset = () => {
     if (animationController) {
+      // Đưa animation về đầu và dừng hẳn
       animationController.reset();
+      animationController.pause();
       setIsPlaying(false);
     }
   };
@@ -1107,8 +1398,15 @@ export default function ExerciseViewer3D({
             />
             {/* Auto-fit camera to model */}
             <CameraFitter modelRef={modelRef} />
-            {/* Muscle highlight - chỉ hiển thị khi bật */}
-            {showMuscleHighlight && <MuscleHighlight muscleGroups={muscleGroups} modelRef={modelRef} />}
+            {/* Muscle highlight bằng mesh phụ (ổn định) */}
+            {showMuscleHighlight && (
+              <MuscleHighlight
+                muscleGroups={muscleGroups}
+                exerciseSlug={exerciseSlug}
+                intensity={highlightIntensity}
+                enablePulse={enablePulse}
+              />
+            )}
           </Suspense>
         </BaseViewer3D>
       </div>
@@ -1213,6 +1511,74 @@ export default function ExerciseViewer3D({
               <span className="text-xs w-8">{speed}x</span>
             </div>
           </div>
+
+          {/* Muscle highlight controls */}
+          {showMuscleHighlight && muscleGroups.length > 0 && (
+            <div className="pt-3 border-t border-slate-700 space-y-3">
+              {/* Muscle groups legend */}
+              <div className="text-xs text-gray-400 mb-2">
+                Nhóm cơ được target:
+        </div>
+              <div className="flex flex-wrap gap-2">
+                {muscleGroups.map((mg) => {
+                  const color = getMuscleColor(mg);
+                  const intensity = exerciseSlug ? getMuscleIntensity(exerciseSlug, mg) : 1.0;
+                  return (
+                    <div
+                      key={mg}
+                      className="px-2 py-1 rounded text-xs flex items-center gap-1.5"
+                      style={{
+                        backgroundColor: `${color}20`,
+                        border: `1px solid ${color}40`,
+                        color: color,
+                      }}
+                    >
+                      <div
+                        className="w-2 h-2 rounded-full"
+                        style={{ backgroundColor: color }}
+                      />
+                      <span className="font-medium">
+                        {MUSCLE_GROUPS[mg]?.name || mg}
+                        {intensity < 1.0 && (
+                          <span className="opacity-70 ml-1">
+                            ({Math.round(intensity * 100)}%)
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Highlight intensity and pulse controls */}
+              <div className="flex items-center gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <label className="text-gray-400">Độ sáng:</label>
+                  <input
+                    type="range"
+                    min="0.3"
+                    max="1.5"
+                    step="0.1"
+                    value={highlightIntensity}
+                    onChange={(e) => setHighlightIntensity(parseFloat(e.target.value))}
+                    className="w-20"
+                  />
+                  <span className="text-xs w-8">{highlightIntensity.toFixed(1)}x</span>
+                </div>
+                <button
+                  onClick={() => setEnablePulse(!enablePulse)}
+                  className={`px-2 py-1 rounded text-xs border transition-colors ${
+                    enablePulse
+                      ? "bg-purple-500/20 text-purple-300 border-purple-500/40"
+                      : "bg-slate-700 text-gray-300 border-slate-600 hover:bg-slate-600"
+                  }`}
+                  title="Bật/tắt hiệu ứng pulse"
+                >
+                  {enablePulse ? "✨ Pulse ON" : "✨ Pulse OFF"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
