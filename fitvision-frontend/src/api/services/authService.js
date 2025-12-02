@@ -67,3 +67,8 @@ export async function resendVerificationEmail(email) {
   return res.data;
 }
 
+export async function getCurrentUser() {
+  const res = await api.get(API_ENDPOINTS.AUTH.ME);
+  return res.data;
+}
+

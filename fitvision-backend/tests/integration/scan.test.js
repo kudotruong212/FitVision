@@ -2,10 +2,26 @@
 // Integration tests for scan flow
 
 import request from 'supertest';
+import mongoose from 'mongoose';
+import { MongoMemoryServer } from 'mongodb-memory-server';
 import { app } from '../../index.js';
 import { User } from '../../models/User.js';
 import { ScanSession } from '../../models/ScanSession.js';
+import { connectDB, disconnectDB } from '../../db.js';
 import jwt from 'jsonwebtoken';
+
+let mongo;
+
+beforeAll(async () => {
+  mongo = await MongoMemoryServer.create();
+  process.env.MONGODB_URI = mongo.getUri();
+  await connectDB();
+});
+
+afterAll(async () => {
+  await disconnectDB();
+  await mongo.stop();
+});
 
 describe('Scan Flow Integration', () => {
   let authToken;
@@ -24,8 +40,10 @@ describe('Scan Flow Integration', () => {
   });
 
   afterAll(async () => {
-    await ScanSession.deleteMany({ user: testUser._id });
-    await User.deleteOne({ _id: testUser._id });
+    if (testUser) {
+      await ScanSession.deleteMany({ user: testUser._id });
+      await User.deleteOne({ _id: testUser._id });
+    }
   });
 
   describe('POST /api/scan/save', () => {

@@ -13,6 +13,22 @@ jest.mock("../cloudinary.js", () => ({
   default: {
     uploader: {
       upload: jest.fn(),
+      upload_stream: jest.fn((options, callback) => {
+        // Mock upload_stream that calls callback when end() is called
+        const mockResult = { secure_url: "https://cdn.fake/image.jpg", public_id: "test-id" };
+        const stream = {
+          end: jest.fn((buffer) => {
+            // Call callback immediately when end is called
+            if (callback) {
+              process.nextTick(() => callback(null, mockResult));
+            }
+            return stream;
+          }),
+          write: jest.fn(),
+          on: jest.fn(),
+        };
+        return stream;
+      }),
       destroy: jest.fn(),
     },
     url: jest.fn(),
